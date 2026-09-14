@@ -814,7 +814,8 @@ ziparchive_deletename|ziparchive_extractto|ziparchive_getarchivecomment|ziparchi
 ziparchive_getfromindex|ziparchive_getfromname|ziparchive_getnameindex|ziparchive_getstatusstring|ziparchive_getstream|\
 ziparchive_locatename|ziparchive_open|ziparchive_renameindex|ziparchive_renamename|ziparchive_setCommentName|ziparchive_setarchivecomment|\
 ziparchive_setcommentindex|ziparchive_statindex|ziparchive_statname|ziparchive_unchangeall|ziparchive_unchangearchive|\
-ziparchive_unchangeindex|ziparchive_unchangename|zlib_get_coding_type'.split('|')
+ziparchive_unchangeindex|ziparchive_unchangename|zlib_get_coding_type|array_is_list|fdatasync|fdiv|fsync|get_debug_type|get_resource_id|\
+json_validate|mb_str_pad|mysqli_execute_query|preg_last_error_msg|stream_context_set_options|str_contains|str_ends_with|str_starts_with'.split('|')
     );
 
     // http://php.net/manual/en/reserved.keywords.php
@@ -903,10 +904,16 @@ sql_regcase'.split('|')
                 next : "qstring"
             }, {
                 token : "constant.numeric", // hex
-                regex : "0[xX][0-9a-fA-F]+\\b"
+                regex : /0[xX][0-9a-fA-F]+(?:_[0-9a-fA-F]+)*\b/
+            }, {
+                token : "constant.numeric", // octal
+                regex : /0[oO]?[0-7]+(_[0-7]+)*\b/
+            }, {
+                token : "constant.numeric", // binary
+                regex : /0[bB][01]+(_[01]+)*\b/
             }, {
                 token : "constant.numeric", // float
-                regex : "[+-]?\\d+(?:(?:\\.\\d*)?(?:[eE][+-]?\\d+)?)?\\b"
+                regex : /(?:[\d]+(?:_\d+)*\.?\d*(?:_\d+)*|\.\d+(?:_\d+)*)(?:[eE][+-]?\d+(?:_\d+)*)?\b/
             }, {
                 token : "constant.language", // constants
                 regex : "\\b(?:DEFAULT_INCLUDE_PATH|E_(?:ALL|CO(?:MPILE_(?:ERROR|WARNING)|RE_(?:ERROR|WARNING))|" +

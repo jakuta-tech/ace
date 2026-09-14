@@ -143,19 +143,25 @@ exports.deferredCall = function(fcn) {
     return deferred;
 };
 
-
+/**
+ * @param {number} [defaultTimeout]
+ */
 exports.delayedCall = function(fcn, defaultTimeout) {
     var timer = null;
     var callback = function() {
         timer = null;
         fcn();
     };
-
+    /**
+     * @param {number} [timeout]
+     */
     var _self = function(timeout) {
         if (timer == null)
             timer = setTimeout(callback, timeout || defaultTimeout);
     };
-
+    /**
+     * @param {number} [timeout]
+     */
     _self.delay = function(timeout) {
         timer && clearTimeout(timer);
         timer = setTimeout(callback, timeout || defaultTimeout);
@@ -177,6 +183,16 @@ exports.delayedCall = function(fcn, defaultTimeout) {
     };
 
     return _self;
+};
+
+/**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
+exports.sleep = function(ms) {
+    return new Promise(function(resolve) {
+        setTimeout(resolve, ms);
+    });
 };
 
 exports.supportsLookbehind = function () {

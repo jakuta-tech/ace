@@ -1,5 +1,21 @@
+/**
+ * ## File mode detection utility
+ *
+ * Provides automatic detection of editor syntax modes based on file paths and extensions. Maps file extensions to
+ * appropriate Ace Editor syntax highlighting modes for over 100 programming languages and file formats including
+ * JavaScript, TypeScript, HTML, CSS, Python, Java, C++, and many others. Supports complex extension patterns and
+ * provides fallback mechanisms for unknown file types.
+ *
+ * @module
+ */
+
 "use strict";
 
+/**
+ * Represents an array to store various syntax modes.
+ *
+ * @type {Mode[]}
+ */
 var modes = [];
 /**
  * Suggests a mode based on the file extension present in the given path
@@ -37,7 +53,7 @@ class Mode {
             }) + "$";
         }
         else {
-            re = "^.*\\.(" + extensions + ")$";
+            re = "\\.(" + extensions + ")$";
         }
 
         this.extRe = new RegExp(re, "gi");
@@ -45,6 +61,7 @@ class Mode {
 
     /**
      * @param {string} filename
+     * @returns {RegExpMatchArray | null}
      */
     supportsFile(filename) {
         return filename.match(this.extRe);
@@ -67,13 +84,16 @@ var supportedModes = {
     Assembly_x86:["asm|a"],
     Astro:       ["astro"],
     AutoHotKey:  ["ahk"],
-    BatchFile:   ["bat|cmd"],
     Basic:       ["bas|bak"],
+    BatchFile:   ["bat|cmd"],
     BibTeX:      ["bib"],
     C_Cpp:       ["cpp|c|cc|cxx|h|hh|hpp|ino"],
     C9Search:    ["c9search_results"],
+    Cedar:       ["cedar"],
+    CedarSchema: ["cedarschema"],
     Cirru:       ["cirru|cr"],
     Clojure:     ["clj|cljs"],
+    Clue:        ["clue"],
     Cobol:       ["CBL|COB"],
     coffee:      ["coffee|cf|cson|^Cakefile"],
     ColdFusion:  ["cfm|cfc"],
@@ -83,6 +103,7 @@ var supportedModes = {
     Csound_Orchestra: ["orc"],
     Csound_Score: ["sco"],
     CSS:         ["css"],
+    CSV:         ["csv"],
     Curly:       ["curly"],
     Cuttlefish:  ["conf"],
     D:           ["d|di"],
@@ -105,12 +126,16 @@ var supportedModes = {
     FSL:         ["fsl"],
     FTL:         ["ftl"],
     Gcode:       ["gcode"],
+    GDResource:  ["tres|tscn"],
+    GDScript:    ["gd"],
+    GDShader:    ["gdshader|gdshaderinc"],
     Gherkin:     ["feature"],
     Gitignore:   ["^.gitignore"],
     Glsl:        ["glsl|frag|vert"],
     Gobstones:   ["gbs"],
     golang:      ["go"],
     GraphQLSchema: ["gql"],
+    GROQ:        ["groq"],
     Groovy:      ["groovy"],
     HAML:        ["haml"],
     Handlebars:  ["hbs|handlebars|tpl|mustache"],
@@ -143,7 +168,6 @@ var supportedModes = {
     Liquid:      ["liquid"],
     Lisp:        ["lisp"],
     LiveScript:  ["ls"],
-    Log:         ["log"],
     LogiQL:      ["logic|lql"],
     Logtalk:     ["lgt"],
     LSL:         ["lsl"],
@@ -161,11 +185,12 @@ var supportedModes = {
     MIXAL:       ["mixal"],
     MUSHCode:    ["mc|mush"],
     MySQL:       ["mysql"],
+    Mariadb:     ["mariadb"],
     Nasal:       ["nas"],
     Nginx:       ["nginx|conf"],
     Nim:         ["nim"],
     Nix:         ["nix"],
-    NSIS:        ["nsi|nsh"],
+    NSIS:        ["nsi|nsh|nsdinc"],
     Nunjucks:    ["nunjucks|nunjs|nj|njk"],
     ObjectiveC:  ["m|mm"],
     OCaml:       ["ml|mli"],
@@ -225,6 +250,7 @@ var supportedModes = {
     Text:        ["txt"],
     Textile:     ["textile"],
     Toml:        ["toml"],
+    TSV:         ["tsv"],
     TSX:         ["tsx"],
     Turtle:      ["ttl"],
     Twig:        ["twig|swig"],
@@ -261,6 +287,14 @@ var nameOverrides = {
     AutoHotKey: "AutoHotkey / AutoIt"
 };
 
+/**
+ * An object that serves as a mapping of mode names to their corresponding mode data.
+ * The keys of this object are mode names (as strings), and the values are expected
+ * to represent data associated with each mode.
+ *
+ * This structure can be used for quick lookups of mode information by name.
+ * @type {Record<string, Mode>}
+ */
 var modesByName = {};
 for (var name in supportedModes) {
     var data = supportedModes[name];
@@ -271,8 +305,6 @@ for (var name in supportedModes) {
     modes.push(mode);
 }
 
-module.exports = {
-    getModeForPath: getModeForPath,
-    modes: modes,
-    modesByName: modesByName
-};
+exports.getModeForPath = getModeForPath;
+exports.modes = modes;
+exports.modesByName = modesByName;

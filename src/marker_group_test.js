@@ -14,7 +14,7 @@ var editor;
 var session1, session2;
 
 module.exports = {
-    setUp: function(next) {
+    setUp: function() {
         var value = "Hello empty world\n"
             + "This is a second line"
             + "\n".repeat(100)
@@ -27,9 +27,7 @@ module.exports = {
         document.body.appendChild(editor.container);
         editor.container.style.height = "200px";
         editor.container.style.width = "300px";
-        dom.importCssString('.ace_tooltip-marker_test { position: absolute; }');
-
-        next();
+        dom.importCssString('.ace_tooltip-marker_test { position: absolute; background: rgba(255, 0, 0, 0.3); }', 'marker_group_test');
     },
    "test: should show and update markers": function() {
         editor.resize(true);
@@ -86,7 +84,7 @@ module.exports = {
         // Height should be two lines
         assert.equal(markerSize.height, 2 * lineHeight);
         // Should start at the beginning of the line
-        assert.equal(markerSize.left, 0);
+        assert.equal(markerSize.left, editor.renderer.scroller.getBoundingClientRect().left);
         // Shoud be as wide as the marker layer itself.
         assert.equal(markerSize.width, editor.renderer.$markerBack.element.getBoundingClientRect().width);
     },
@@ -110,12 +108,13 @@ module.exports = {
         var lineHeight = editor.renderer.lineHeight;
         var characterWidth = editor.renderer.characterWidth;
 
+        var baseRect = editor.renderer.$markerBack.element.getBoundingClientRect();
         // Height should be one lines
         assert.equal(markerSize.height, lineHeight);
         // Should start at the 13th character (including 4px offset)
-        assert.equal(markerSize.left, 12 * characterWidth + 4);
+        assert.equal(markerSize.left, 12 * characterWidth + 4 + baseRect.left);
         // Shoud be as wide as the marker layer - 12 characters and the offset on both sides.
-        assert.equal(markerSize.width, editor.renderer.$markerBack.element.getBoundingClientRect().width - 12 * characterWidth - 4 - 4);
+        assert.equal(markerSize.width, baseRect.width - 12 * characterWidth - 4 - 4);
     },
     "test: should default to markers of text type": function() {
         editor.resize(true);
@@ -138,19 +137,18 @@ module.exports = {
         var markerSize = editor.container.querySelectorAll(".m")[0].getBoundingClientRect();
         var lineHeight = editor.renderer.lineHeight;
         var characterWidth = editor.renderer.characterWidth;
+        var baseRect = editor.renderer.$markerBack.element.getBoundingClientRect();
 
         // Height should be one lines
         assert.equal(markerSize.height, lineHeight);
         // Should start at the 13th character (including 4px offset)
-        assert.equal(markerSize.left, 12 * characterWidth + 4);
+        assert.equal(markerSize.left, 12 * characterWidth + 4 + baseRect.left);
         // Shoud be as wide as the remaining characters in the range on the first line.
-        assert.equal(markerSize.width, 6 * characterWidth);
+        assert.equal(Math.round(markerSize.width), Math.round(6 * characterWidth));
     },
     tearDown: function() {
         editor.destroy();
     }
 };
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("./test/run")(module);

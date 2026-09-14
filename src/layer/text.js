@@ -9,7 +9,7 @@ var lang = require("../lib/lang");
 var Lines = require("./lines").Lines;
 var EventEmitter = require("../lib/event_emitter").EventEmitter;
 var nls = require("../config").nls;
-const isTextToken = require("./text_util").isTextToken;
+var isTextToken = require("./text_util").isTextToken;
 
 class Text {
     /**
@@ -350,7 +350,8 @@ class Text {
 
     $renderToken(parent, screenColumn, token, value) {
         var self = this;
-        var re = /(\t)|( +)|([\x00-\x1f\x80-\xa0\xad\u1680\u180E\u2000-\u200f\u2028\u2029\u202F\u205F\uFEFF\uFFF9-\uFFFC\u2066\u2067\u2068\u202A\u202B\u202D\u202E\u202C\u2069\u2060\u2061\u2062\u2063\u2064\u206A\u206B\u206B\u206C\u206D\u206E\u206F]+)|(\u3000)|([\u1100-\u115F\u11A3-\u11A7\u11FA-\u11FF\u2329-\u232A\u2E80-\u2E99\u2E9B-\u2EF3\u2F00-\u2FD5\u2FF0-\u2FFB\u3001-\u303E\u3041-\u3096\u3099-\u30FF\u3105-\u312D\u3131-\u318E\u3190-\u31BA\u31C0-\u31E3\u31F0-\u321E\u3220-\u3247\u3250-\u32FE\u3300-\u4DBF\u4E00-\uA48C\uA490-\uA4C6\uA960-\uA97C\uAC00-\uD7A3\uD7B0-\uD7C6\uD7CB-\uD7FB\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE52\uFE54-\uFE66\uFE68-\uFE6B\uFF01-\uFF60\uFFE0-\uFFE6]|[\uD800-\uDBFF][\uDC00-\uDFFF])/g;
+        // \u200D (zero width joiner) is excluded to keep emoji sequences intact
+        var re = /(\t)|( +)|([\x00-\x1f\x80-\xa0\xad\u1680\u180E\u2000-\u200C\u200E\u200f\u2028\u2029\u202F\u205F\uFEFF\uFFF9-\uFFFC\u2066\u2067\u2068\u202A\u202B\u202D\u202E\u202C\u2069\u2060\u2061\u2062\u2063\u2064\u206A\u206B\u206B\u206C\u206D\u206E\u206F]+)|(\u3000+)/g;
 
         var valueFragment = this.dom.createFragment(this.element);
 
@@ -361,7 +362,6 @@ class Text {
             var simpleSpace = m[2];
             var controlCharacter = m[3];
             var cjkSpace = m[4];
-            var cjk = m[5];
 
             if (!self.showSpaces && simpleSpace)
                 continue;
@@ -376,7 +376,9 @@ class Text {
 
             if (tab) {
                 var tabSize = self.session.getScreenTabSize(screenColumn + m.index);
-                valueFragment.appendChild(self.$tabStrings[tabSize].cloneNode(true));
+                var text = self.$tabStrings[tabSize].cloneNode(true);
+                text["charCount"] = 1;
+                valueFragment.appendChild(text);
                 screenColumn += tabSize - 1;
             } else if (simpleSpace) {
                 if (self.showSpaces) {
@@ -393,25 +395,25 @@ class Text {
                 span.textContent = lang.stringRepeat(self.SPACE_CHAR, controlCharacter.length);
                 valueFragment.appendChild(span);
             } else if (cjkSpace) {
-                // U+3000 is both invisible AND full-width, so must be handled uniquely
-                screenColumn += 1;
-
-                var span = this.dom.createElement("span");
-                span.style.width = (self.config.characterWidth * 2) + "px";
-                span.className = self.showSpaces ? "ace_cjk ace_invisible ace_invisible_space" : "ace_cjk";
-                span.textContent = self.showSpaces ? self.SPACE_CHAR : cjkSpace;
-                valueFragment.appendChild(span);
-            } else if (cjk) {
-                screenColumn += 1;
-                var span = this.dom.createElement("span");
-                span.style.width = (self.config.characterWidth * 2) + "px";
-                span.className = "ace_cjk";
-                span.textContent = cjk;
-                valueFragment.appendChild(span);
+                if (self.showSpaces) {
+                    var span = this.dom.createElement("span");
+                    span.className = "ace_invisible ace_invisible_space";
+                    span.textContent = lang.stringRepeat(self.CJK_SPACE_CHAR, cjkSpace.length);
+                    valueFragment.appendChild(span);
+                } else {
+                    valueFragment.appendChild(this.dom.createTextNode(cjkSpace, this.element));
+                }
             }
         }
 
-        valueFragment.appendChild(this.dom.createTextNode(i ? value.slice(i) : value, this.element));
+        var trimmedValue = i ? value.slice(i) : value;
+        if (trimmedValue.length > 256) {
+            for (var j = 0; j < trimmedValue.length; ) {
+                valueFragment.appendChild(this.dom.createTextNode(trimmedValue.slice(j, j += 256), this.element));
+            }
+        } else {
+            valueFragment.appendChild(this.dom.createTextNode(trimmedValue, this.element));
+        }
 
         if (!isTextToken(token.type)) {
             var classes = "ace_" + token.type.replace(/\./g, " ace_");
@@ -447,7 +449,9 @@ class Text {
             return value.substr(cols);
         } else if (value[0] == "\t") {
             for (var i=0; i<cols; i++) {
-                parent.appendChild(this.$tabStrings["\t"].cloneNode(true));
+                var tabSpan = this.$tabStrings["\t"].cloneNode(true);
+                tabSpan["charCount"] = 1;
+                parent.appendChild(tabSpan);
             }
             this.$highlightIndentGuide();
             return value.substr(cols);
@@ -481,7 +485,7 @@ class Text {
             var ranges = this.session.$bracketHighlight.ranges;
             for (var i = 0; i < ranges.length; i++) {
                 if (cursor.row !== ranges[i].start.row) {
-                    this.$highlightIndentGuideMarker.end = ranges[i].start.row;
+                    this.$highlightIndentGuideMarker.end = ranges[i].start.row + 1;
                     if (cursor.row > ranges[i].start.row) {
                         this.$highlightIndentGuideMarker.dir = -1;
                     }
@@ -511,25 +515,25 @@ class Text {
     }
 
     $clearActiveIndentGuide() {
-        var cells = this.$lines.cells;
-        for (var i = 0; i < cells.length; i++) {
-            var cell = cells[i];
-            var childNodes = cell.element.childNodes;
-            if (childNodes.length > 0) {
-                for (var j = 0; j < childNodes.length; j++) {
-                    if (childNodes[j].classList && childNodes[j].classList.contains("ace_indent-guide-active")) {
-                        childNodes[j].classList.remove("ace_indent-guide-active");
-                        break;
-                    }
-                }
-            }
+        var activeIndentGuides = this.element.querySelectorAll(".ace_indent-guide-active");
+        for (var i = 0; i < activeIndentGuides.length; i++) {
+            activeIndentGuides[i].classList.remove("ace_indent-guide-active");
         }
     }
 
     $setIndentGuideActive(cell, indentLevel) {
         var line = this.session.doc.getLine(cell.row);
         if (line !== "") {
-            var childNodes = cell.element.childNodes;
+            let element = cell.element;
+            if (cell.element.classList && cell.element.classList.contains("ace_line_group")) {
+                if (cell.element.childNodes.length > 0) {
+                    element = cell.element.childNodes[0];
+                }
+                else {
+                    return;
+                }
+            }
+            var childNodes = element.childNodes;
             if (childNodes) {
                 let node = childNodes[indentLevel - 1];
                 if (node && node.classList && node.classList.contains("ace_indent-guide")) node.classList.add(
@@ -558,7 +562,7 @@ class Text {
                 for (var i = cells.length - 1; i >= 0; i--) {
                     var cell = cells[i];
                     if (this.$highlightIndentGuideMarker.end && cell.row < this.$highlightIndentGuideMarker.start) {
-                        if (cell.row <= this.$highlightIndentGuideMarker.end) break;
+                        if (cell.row < this.$highlightIndentGuideMarker.end) break;
                         this.$setIndentGuideActive(cell, indentLevel);
                     }
                 }
@@ -609,7 +613,9 @@ class Text {
                     lineEl = this.$createLineElement();
                     parent.appendChild(lineEl);
 
-                    lineEl.appendChild(this.dom.createTextNode(lang.stringRepeat("\xa0", splits.indent), this.element));
+                    var text = this.dom.createTextNode(lang.stringRepeat("\xa0", splits.indent), this.element);
+                    text["charCount"] = 0; // not to take into account when we are counting columns
+                    lineEl.appendChild(text);
 
                     split ++;
                     screenColumn = 0;
@@ -779,6 +785,7 @@ Text.prototype.EOL_CHAR_CRLF = "\xa4";
 Text.prototype.EOL_CHAR = Text.prototype.EOL_CHAR_LF;
 Text.prototype.TAB_CHAR = "\u2014"; //"\u21E5";
 Text.prototype.SPACE_CHAR = "\xB7";
+Text.prototype.CJK_SPACE_CHAR = "\u30FB";
 Text.prototype.$padding = 0;
 Text.prototype.MAX_LINE_LENGTH = 10000;
 Text.prototype.showInvisibles = false;

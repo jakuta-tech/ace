@@ -9,10 +9,14 @@
 var useragent = require("../lib/useragent");
 var KEY_MODS = keyUtil.KEY_MODS;
 
+/**
+ * @typedef {"win" | "mac"} Platform
+ */
+
 class MultiHashHandler {
     /**
      * @param {Record<string, CommandLike> | Command[]} [config]
-     * @param {string} [platform]
+     * @param {Platform} [platform]
      */
     constructor(config, platform) {
         this.$init(config, platform, false);
@@ -20,7 +24,7 @@ class MultiHashHandler {
 
     /**
      * @param {Record<string, CommandLike> | Command[]} config
-     * @param {string} [platform]
+     * @param {Platform} [platform]
      * @param {boolean} [$singleCommand]
      */
     $init(config, platform, $singleCommand) {
@@ -167,7 +171,7 @@ class MultiHashHandler {
     }
 
     /**
-     * @param {Record<string, CommandLike>} commands
+     * @param {Record<string, CommandLike | string>} commands
      */
     removeCommands(commands) {
         Object.keys(commands).forEach(function(name) {
@@ -176,7 +180,7 @@ class MultiHashHandler {
     }
 
     /**
-     * @param {Record<string, CommandLike>} keyList
+     * @param {Record<string, CommandLike | string>} keyList
      */
     bindKeys(keyList) {
         Object.keys(keyList).forEach(function(key) {
@@ -230,7 +234,7 @@ class MultiHashHandler {
     }
 
     /**
-     * @param {{ $keyChain: string | any[]; }} data
+     * @param {any} data
      * @param {number} hashId
      * @param {string} keyString
      * @param {number} keyCode
@@ -281,7 +285,7 @@ function getPosition(command) {
 class HashHandler extends MultiHashHandler {
     /**
      * @param {Record<string, CommandLike> | Command[]} [config]
-     * @param {string} [platform]
+     * @param {Platform} [platform]
      */
     constructor(config, platform) {
         super(config, platform);

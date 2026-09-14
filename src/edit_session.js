@@ -37,7 +37,7 @@ class EditSession {
     /**
      * Sets up a new `EditSession` and associates it with the given `Document` and `Mode`.
      * @param {Document | String} [text] [If `text` is a `Document`, it associates the `EditSession` with it. Otherwise, a new `Document` is created, with the initial text]{: #textParam}
-     * @param {SyntaxMode} [mode] [The initial language mode to use for the document]{: #modeParam}
+     * @param {SyntaxMode | string} [mode] [The initial language mode to use for the document]{: #modeParam}
      **/
     constructor(text, mode) {
         /**@type {Document}*/this.doc;
@@ -56,6 +56,9 @@ class EditSession {
         this.$foldData.toString = function() {
             return this.join("\n");
         };
+
+        // @experimental
+        this.$gutterCustomWidgets = {};
 
         // Set default background tokenizer with Text mode until editor session mode is set
         this.bgTokenizer = new BackgroundTokenizer((new TextMode()).getTokenizer(), this);
@@ -90,6 +93,7 @@ class EditSession {
     }
 
     $initOperationListeners() {
+        /**@type {import("../ace-internal").Ace.Operation | null}*/
         this.curOp = null;
         this.on("change", () => {
             if (!this.curOp) {
@@ -138,7 +142,7 @@ class EditSession {
     /**
      * End current Ace operation.
      * Emits "beforeEndOperation" event just before clearing everything, where the current operation can be accessed through `curOp` property.
-     * @param {any} e
+     * @param {any} [e]
      */
     endOperation(e) {
         if (this.curOp) {
@@ -192,7 +196,7 @@ class EditSession {
 
     /**
      * Get "widgetManager" from EditSession
-     * 
+     *
      * @returns {LineWidgets} object
      */
     get widgetManager() {
@@ -202,18 +206,18 @@ class EditSession {
 
         if (this.$editor)
             widgetManager.attach(this.$editor);
-        
+
         return widgetManager;
     }
 
     /**
      * Set "widgetManager" in EditSession
-     * 
+     *
      * @returns void
      */
     set widgetManager(value) {
         Object.defineProperty(this, "widgetManager", {
-            writable: true, 
+            writable: true,
             enumerable: true,
             configurable: true,
             value: value,
@@ -333,10 +337,14 @@ class EditSession {
         if (typeof session == "string")
             session = JSON.parse(session);
         const undoManager = new UndoManager();
-        undoManager.$undoStack = session.history.undo;
-        undoManager.$redoStack = session.history.redo;
-        undoManager.mark = session.history.mark;
-        undoManager.$rev = session.history.rev;
+        // history may be empty, e.g. serialized from a session that used
+        // the default no-op undo manager
+        if (session.history) {
+            undoManager.$undoStack = session.history.$undoStack || [];
+            undoManager.$redoStack = session.history.$redoStack || [];
+            undoManager.mark = session.history.mark || 0;
+            undoManager.$rev = session.history.rev || 0;
+        }
 
         const editSession = new EditSession(session.value);
         session.folds.forEach(function(fold) {
@@ -582,6 +590,34 @@ class EditSession {
             this.$decorations[row] = "";
         this.$decorations[row] += " " + className;
         this._signal("changeBreakpoint", {});
+    }
+
+    /**
+     * Replaces the custom icon with the fold widget if present from a specific row in the gutter
+     * @param {number} row The row number for which to hide the custom icon
+     * @experimental
+     */
+    removeGutterCustomWidget(row) {
+        if(this.$editor) {
+            this.$editor.renderer.$gutterLayer.$removeCustomWidget(row);
+        }
+    }
+
+    /**
+     * Replaces the fold widget if present with the custom icon from a specific row in the gutter
+     * @param {number} row - The row number where the widget will be displayed
+     * @param {Object} attributes - Configuration attributes for the widget
+     * @param {string} attributes.className - CSS class name for styling the widget
+     * @param {string} attributes.label - Text label to display in the widget
+     * @param {string} attributes.title - Tooltip text for the widget
+     * @param {Object} attributes.callbacks - Event callback functions for the widget e.g onClick; 
+     * @returns {void}
+     * @experimental
+    */
+    addGutterCustomWidget(row,attributes) {
+        if(this.$editor) {
+            this.$editor.renderer.$gutterLayer.$addCustomWidget(row,attributes);
+        }
     }
 
     /**
@@ -933,6 +969,9 @@ class EditSession {
         // load on demand
         this.$modeId = path;
         config.loadModule(["mode", path], function(m) {
+            if (this.destroyed) {
+                return;
+            }
             if (this.$modeId !== path)
                 return cb && cb();
             if (this.$modes[path] && !options) {
@@ -1199,7 +1238,7 @@ class EditSession {
     /**
      * Reverts previous changes to your document.
      * @param {Delta[]} deltas An array of previous changes
-     * @param {Boolean} [dontSelect] [If `true`, doesn't select the range of where the change occured]{: #dontSelect}
+     * @param {Boolean} [dontSelect] If `true`, doesn't select the range of where the change occured
      **/
     undoChanges(deltas, dontSelect) {
         if (!deltas.length)
@@ -2067,10 +2106,6 @@ class EditSession {
             // tab
             if (c == 9) {
                 screenColumn += this.getScreenTabSize(screenColumn);
-            }
-            // full width characters
-            else if (c >= 0x1100 && isFullWidth(c)) {
-                screenColumn += 2;
             } else {
                 screenColumn += 1;
             }
@@ -2203,13 +2238,12 @@ class EditSession {
      * Converts characters coordinates on the screen to characters coordinates within the document. [This takes into account code folding, word wrap, tab size, and any other visual modifications.]{: #conversionConsiderations}
      * @param {Number} screenRow The screen row to check
      * @param {Number} screenColumn The screen column to check
-     * @param {Number} [offsetX] screen character x-offset [optional]
      *
      * @returns {Point} The object returned has two properties: `row` and `column`.
      *
      * @related EditSession.documentToScreenPosition
      **/
-    screenToDocumentPosition(screenRow, screenColumn, offsetX) {
+    screenToDocumentPosition(screenRow, screenColumn) {
         if (screenRow < 0)
             return {row: 0, column: 0};
 
@@ -2280,9 +2314,6 @@ class EditSession {
                 }
             }
         }
-
-        if (offsetX !== undefined && this.$bidiHandler.isBidiRow(row + splitIndex, docRow, splitIndex))
-            screenColumn = this.$bidiHandler.offsetToCol(offsetX);
 
         docColumn += this.$getStringScreenWidth(line, screenColumn - wrapIndent)[1];
 
@@ -2747,4 +2778,3 @@ config.defineOptions(EditSession.prototype, "session", {
 });
 
 exports.EditSession = EditSession;
-

@@ -29,7 +29,7 @@ exports.config = require("./config");
 /**
  * Embeds the Ace editor into the DOM, at the element provided by `el`.
  * @param {String | HTMLElement & {env?: any, value?: any} | null} [el] Either the id of an element, or the element itself
- * @param {Object } [options] Options for the editor
+ * @param {Partial<import("../ace-internal").Ace.EditorOptions> } [options] Options for the editor
  * @returns {Editor}
  **/
 exports.edit = function(el, options) {
@@ -73,7 +73,7 @@ exports.edit = function(el, options) {
 /**
  * Creates a new [[EditSession]], and returns the associated [[Document]].
  * @param {import('./document').Document | String} text {:textParam}
- * @param {import("../ace-internal").Ace.SyntaxMode} [mode] {:modeParam}
+ * @param {import("../ace-internal").Ace.SyntaxMode | string} [mode] {:modeParam}
  * @returns {EditSession}
  **/
 exports.createEditSession = function(text, mode) {

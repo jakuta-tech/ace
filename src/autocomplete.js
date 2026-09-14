@@ -28,8 +28,9 @@ var preventParentScroll = require("./lib/scroll").preventParentScroll;
  * @property {string} [docText] - a plain text that would be displayed as an additional popup. If `docHTML` exists,
  * it would be used instead of `docText`.
  * @property {string} [completerId] - the identifier of the completer
+ * @property {boolean} [skipFilter] - a boolean value to decide if the popup item is going to skip the filtering process done using prefix text.
  * @property {import("../ace-internal").Ace.IRange} [range] - An object specifying the range of text to be replaced with the new completion value (experimental)
- * @property {string} [command] - A command to be executed after the completion is inserted (experimental)
+ * @property {any} [command] - A command to be executed after the completion is inserted (experimental)
  * @property {string} [snippet] - a text snippet that would be inserted when the completion is selected
  * @property {string} [value] - The text that would be inserted when selecting this completion.
  * @property {import("../ace-internal").Ace.Completer} [completer]
@@ -39,14 +40,14 @@ var preventParentScroll = require("./lib/scroll").preventParentScroll;
 
 /**
  * @typedef {BaseCompletion & {snippet: string}} SnippetCompletion
- * @property {string} snippet 
+ * @property {string} snippet
  * @property {string} [value]
  * @export
  */
 
 /**
  * @typedef {BaseCompletion & {value: string}} ValueCompletion
- * @property {string} value 
+ * @property {string} value
  * @property {string} [snippet]
  * @export
  */
@@ -83,7 +84,7 @@ class Autocomplete {
         /**
          *  @property {Boolean} showLoadingState - A boolean indicating whether the loading states of the Autocompletion should be shown to the end-user. If enabled
          * it shows a loading indicator on the popup while autocomplete is loading.
-         * 
+         *
          * Experimental: This visualisation is not yet considered stable and might change in the future.
          */
         this.showLoadingState = false;
@@ -130,7 +131,7 @@ class Autocomplete {
 
     $init() {
         /**@type {AcePopup}**/
-        this.popup = new AcePopup(this.parentNode || document.body || document.documentElement); 
+        this.popup = new AcePopup(this.parentNode || document.body || document.documentElement);
         this.popup.on("click", function(e) {
             this.insertMatch();
             e.stop();
@@ -306,7 +307,7 @@ class Autocomplete {
         if (this.popup.tryShow(pos, lineHeight, "top")) {
             return;
         }
-        
+
         this.popup.show(pos, lineHeight);
     }
 
@@ -339,17 +340,17 @@ class Autocomplete {
         }
 
         editor.keyBinding.addKeyboardHandler(this.keyboardHandler);
-        
+
         var newRow;
         if (this.stickySelection)
-            newRow = this.popup.data.indexOf(previousSelectedItem); 
-        if (!newRow || newRow === -1) 
+            newRow = this.popup.data.indexOf(previousSelectedItem);
+        if (!newRow || newRow === -1)
             newRow = 0;
-        
+
         this.popup.setRow(this.autoSelect ? newRow : -1);
-     
+
         // If we stay on the same row, but the content is different, we want to update the popup.
-        if (newRow === oldRow && previousSelectedItem !== this.completions.filtered[newRow]) 
+        if (newRow === oldRow && previousSelectedItem !== this.completions.filtered[newRow])
             this.$onPopupChange();
 
         // If we stay on the same line and have inlinePreview enabled, we want to make sure the
@@ -472,7 +473,7 @@ class Autocomplete {
             this.detach();
         return result;
     }
-    
+
     /**
      * This is the entry point for the autocompletion class, triggers the actions which collect and display suggestions
      * @param {Editor} editor
@@ -539,7 +540,7 @@ class Autocomplete {
             this.openPopup(this.editor, prefix, keepPopupPosition);
             return;
         }
-        
+
         if (options && options.matches) {
             var pos = this.editor.getSelectionRange().start;
             this.base = this.editor.session.doc.createAnchor(pos.row, pos.column);
@@ -602,7 +603,7 @@ class Autocomplete {
                 }
             // If showLoadingState is true and there is still a completer loading, show 'Loading...'
             // in the top row of the completer popup.
-            this.completions = !finished && this.showLoadingState ? 
+            this.completions = !finished && this.showLoadingState ?
                 new FilteredList(
                     Autocomplete.completionsForLoading.concat(filtered), completions.filterText
                 ) :
@@ -625,12 +626,12 @@ class Autocomplete {
 
     updateDocTooltip() {
         var popup = this.popup;
-        var all = this.completions.filtered;
+        var all = this.completions && this.completions.filtered;
         var selected = all && (all[popup.getHoveredRow()] || all[popup.getRow()]);
         var doc = null;
         if (!selected || !this.editor || !this.popup.isOpen)
             return this.hideDocTooltip();
-        
+
         var completersLength = this.editor.completers.length;
         for (var i = 0; i < completersLength; i++) {
             var completer = this.editor.completers[i];
@@ -679,31 +680,53 @@ class Autocomplete {
 
         var popup = this.popup;
         var rect = popup.container.getBoundingClientRect();
-        tooltipNode.style.top = popup.container.style.top;
-        tooltipNode.style.bottom = popup.container.style.bottom;
 
-        tooltipNode.style.display = "block";
-        if (window.innerWidth - rect.right < 320) {
-            if (rect.left < 320) {
-                if(popup.isTopdown) {
-                    tooltipNode.style.top = rect.bottom + "px";
-                    tooltipNode.style.left = rect.left + "px";
-                    tooltipNode.style.right = "";
-                    tooltipNode.style.bottom = "";
-                } else {
-                    tooltipNode.style.top = popup.container.offsetTop - tooltipNode.offsetHeight + "px";
-                    tooltipNode.style.left = rect.left + "px";
-                    tooltipNode.style.right = "";
-                    tooltipNode.style.bottom = "";
-                }
+        var targetWidth = 400;
+        var targetHeight = 300;
+        var scrollBarSize = popup.renderer.scrollBar.width || 10;
+
+        var leftSize = rect.left;
+        var rightSize = window.innerWidth - rect.right - scrollBarSize;
+        var topSize = popup.isTopdown ?  window.innerHeight - scrollBarSize - rect.bottom : rect.top;
+        var scores = [
+            Math.min(rightSize / targetWidth, 1),
+            Math.min(leftSize / targetWidth, 1),
+            Math.min(topSize / targetHeight, 1) * 0.9,
+        ];
+        var max = Math.max.apply(Math, scores);
+        var tooltipStyle = tooltipNode.style;
+        tooltipStyle.display = "block";
+
+        if (max == scores[0] || scores[0] >= 1) {
+            tooltipStyle.left = (rect.right + 1) + "px";
+            tooltipStyle.right = "";
+            tooltipStyle.maxWidth = targetWidth * max + "px";
+            tooltipStyle.top = rect.top + "px";
+            tooltipStyle.bottom = "";
+            tooltipStyle.maxHeight = Math.min(window.innerHeight - scrollBarSize - rect.top, targetHeight) + "px";
+        } else if (max == scores[1] || scores[1] >= 1) {
+            tooltipStyle.right = window.innerWidth - rect.left + "px";
+            tooltipStyle.left = "";
+            tooltipStyle.maxWidth = targetWidth * max + "px";
+            tooltipStyle.top = rect.top + "px";
+            tooltipStyle.bottom = "";
+            tooltipStyle.maxHeight = Math.min(window.innerHeight - scrollBarSize - rect.top, targetHeight) + "px";
+        } else if (max == scores[2]) {
+            tooltipStyle.left = rect.left + "px";
+            tooltipStyle.right = "";
+            tooltipStyle.maxWidth = Math.min(targetWidth, window.innerWidth - rect.left) + "px";
+
+            if (popup.isTopdown) {
+                tooltipStyle.top = rect.bottom + "px";
+                tooltipStyle.bottom = "";
+                tooltipStyle.maxHeight = Math.min(window.innerHeight - scrollBarSize - rect.bottom, targetHeight) + "px";
             } else {
-                tooltipNode.style.right = window.innerWidth - rect.left + "px";
-                tooltipNode.style.left = "";
+                tooltipStyle.top = "";
+                tooltipStyle.bottom = (window.innerHeight  - rect.top) + "px";
+                tooltipStyle.maxHeight = Math.min(rect.top, targetHeight) + "px";
             }
-        } else {
-            tooltipNode.style.left = (rect.right + 1) + "px";
-            tooltipNode.style.right = "";
         }
+        dom.$fixPositionBug(tooltipNode);
     }
 
     hideDocTooltip() {
@@ -819,7 +842,7 @@ Autocomplete.startCommand = {
  * This class is responsible for providing completions and inserting them to the editor
  */
 class CompletionProvider {
-    
+
 
     /**
      * @param {{pos: Position, prefix: string}} [initialPosition]
@@ -859,7 +882,7 @@ class CompletionProvider {
             // TODO add support for options.deleteSuffix
             if (!this.completions)
                 return false;
-            
+
             var replaceBefore = this.completions.filterText.length;
             var replaceAfter = 0;
             if (data.range && data.range.start.row === data.range.end.row) {
@@ -882,7 +905,7 @@ class CompletionProvider {
                     editor.session.remove(range);
                 }
             }
-          
+
             if (data.snippet) {
                 snippetManager.insertSnippet(editor, data.snippet);
             }
@@ -892,7 +915,7 @@ class CompletionProvider {
             if (data.completer && data.completer.onInsert && typeof data.completer.onInsert == "function") {
                 data.completer.onInsert(editor, data);
             }
-            
+
             if (data.command && data.command === "startAutocomplete") {
                 editor.execCommand(data.command);
             }
@@ -917,9 +940,9 @@ class CompletionProvider {
     gatherCompletions(editor, callback) {
         var session = editor.getSession();
         var pos = editor.getCursorPosition();
-    
+
         var prefix = util.getCompletionPrefix(editor);
-    
+
         var matches = [];
         this.completers = editor.completers;
         var total = editor.completers.length;
@@ -993,7 +1016,7 @@ class CompletionProvider {
 
             processResults(results);
         }.bind(this));
-        
+
         isImmediate = false;
         if (immediateResults) {
             var results = immediateResults;
@@ -1013,6 +1036,10 @@ class CompletionProvider {
 }
 
 class FilteredList {
+    /**
+     * @param {any} array
+     * @param {string} [filterText]
+     */
     constructor(array, filterText) {
         this.all = array;
         this.filtered = array;
@@ -1020,7 +1047,7 @@ class FilteredList {
         this.exactMatch = false;
         this.ignoreCaption = false;
     }
-    
+
     setFilter(str) {
         if (str.length > this.filterText && str.lastIndexOf(this.filterText, 0) === 0)
             var matches = this.filtered;
@@ -1030,7 +1057,7 @@ class FilteredList {
         this.filterText = str;
         matches = this.filterCompletions(matches, this.filterText);
         matches = matches.sort(function(a, b) {
-            return b.exactMatch - a.exactMatch || b.$score - a.$score 
+            return b.exactMatch - a.exactMatch || b.$score - a.$score
                 || (a.caption || a.value).localeCompare(b.caption || b.value);
         });
 
@@ -1045,12 +1072,17 @@ class FilteredList {
 
         this.filtered = matches;
     }
-    
+
     filterCompletions(items, needle) {
         var results = [];
         var upper = needle.toUpperCase();
         var lower = needle.toLowerCase();
         loop: for (var i = 0, item; item = items[i]; i++) {
+            if (item.skipFilter) {
+                item.$score = item.score;
+                results.push(item);
+                continue;
+            }
             var caption = (!this.ignoreCaption && item.caption) || item.value || item.snippet;
             if (!caption) continue;
             var lastIndex = -1;

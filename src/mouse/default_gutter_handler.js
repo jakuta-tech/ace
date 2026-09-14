@@ -3,10 +3,10 @@
  * @typedef {import("./mouse_handler").MouseHandler} MouseHandler
  */
 var dom = require("../lib/dom");
-var event = require("../lib/event");
-var Tooltip = require("../tooltip").Tooltip;
+var MouseEvent = require("./mouse_event").MouseEvent;
+var HoverTooltip = require("../tooltip").HoverTooltip;
 var nls = require("../config").nls;
-var lang = require("../lib/lang");
+var Range = require("../range").Range;
 
 /**
  * @param {MouseHandler} mouseHandler
@@ -15,7 +15,13 @@ var lang = require("../lib/lang");
 function GutterHandler(mouseHandler) {
     var editor = mouseHandler.editor;
     var gutter = editor.renderer.$gutterLayer;
-    var tooltip = new GutterTooltip(editor);
+    mouseHandler.$tooltip = new GutterTooltip(editor);
+    mouseHandler.$tooltip.addToEditor(editor);
+
+    mouseHandler.$tooltip.setDataProvider(function(e, editor) {
+        var row = e.getDocumentPosition().row;
+        mouseHandler.$tooltip.showTooltip(row);
+    });
 
     mouseHandler.editor.setDefaultHandler("guttermousedown", function(e) {
         if (!editor.isFocused() || e.getButton() != 0)
@@ -41,116 +47,64 @@ function GutterHandler(mouseHandler) {
         mouseHandler.captureMouse(e);
         return e.preventDefault();
     });
-
-    var tooltipTimeout, mouseEvent;
-
-    function showTooltip() {
-        var row = mouseEvent.getDocumentPosition().row;
-
-        var maxRow = editor.session.getLength();
-        if (row == maxRow) {
-            var screenRow = editor.renderer.pixelToScreenCoordinates(0, mouseEvent.y).row;
-            var pos = mouseEvent.$pos;
-            if (screenRow > editor.session.documentToScreenRow(pos.row, pos.column))
-                return hideTooltip();
-        }
-
-        tooltip.showTooltip(row);
-
-        if (!tooltip.isOpen)
-            return;
-
-        editor.on("mousewheel", hideTooltip);
-
-        if (mouseHandler.$tooltipFollowsMouse) {
-            moveTooltip(mouseEvent);
-        } else {
-            var gutterRow = mouseEvent.getGutterRow();
-            var gutterCell = gutter.$lines.get(gutterRow);
-            if (gutterCell) {
-                var gutterElement = gutterCell.element.querySelector(".ace_gutter_annotation");
-                var rect = gutterElement.getBoundingClientRect();
-                var style = tooltip.getElement().style;
-                style.left = rect.right + "px";
-                style.top = rect.bottom + "px";
-            } else {
-                moveTooltip(mouseEvent);
-            }
-        }
-    }
-
-    function hideTooltip() {
-        if (tooltipTimeout)
-            tooltipTimeout = clearTimeout(tooltipTimeout);
-        if (tooltip.isOpen) {
-            tooltip.hideTooltip();
-            editor.off("mousewheel", hideTooltip);
-        }
-    }
-
-    function moveTooltip(e) {
-        tooltip.setPosition(e.x, e.y);
-    }
-
-    mouseHandler.editor.setDefaultHandler("guttermousemove", function(e) {
-        var target = e.domEvent.target || e.domEvent.srcElement;
-        if (dom.hasCssClass(target, "ace_fold-widget"))
-            return hideTooltip();
-
-        if (tooltip.isOpen && mouseHandler.$tooltipFollowsMouse)
-            moveTooltip(e);
-
-        mouseEvent = e;
-        if (tooltipTimeout)
-            return;
-        tooltipTimeout = setTimeout(function() {
-            tooltipTimeout = null;
-            if (mouseEvent && !mouseHandler.isMousePressed)
-                showTooltip();
-            else
-                hideTooltip();
-        }, 50);
-    });
-
-    event.addListener(editor.renderer.$gutter, "mouseout", function(e) {
-        mouseEvent = null;
-        if (!tooltip.isOpen || tooltipTimeout)
-            return;
-
-        tooltipTimeout = setTimeout(function() {
-            tooltipTimeout = null;
-            hideTooltip();
-        }, 50);
-    }, editor);
-    
-    editor.on("changeSession", hideTooltip);
-    editor.on("input", hideTooltip);
 }
 
 exports.GutterHandler = GutterHandler;
 
-class GutterTooltip extends Tooltip {
+
+class GutterTooltip extends HoverTooltip {
+    /**
+     * @param {import("../editor").Editor} editor
+     */
     constructor(editor) {
         super(editor.container);
+        this.id = "gt" + (++GutterTooltip.$uid);
         this.editor = editor;
-    }
+        /**@type {Number | Undefined}*/
+        this.visibleTooltipRow;
+        var el = this.getElement();
+        el.setAttribute("role", "tooltip");
+        el.setAttribute("id", this.id);
+        el.style.pointerEvents = "auto";
+        this.idleTime = 50;
 
-    setPosition(x, y) {
-        var windowWidth = window.innerWidth || document.documentElement.clientWidth;
-        var windowHeight = window.innerHeight || document.documentElement.clientHeight;
-        var width = this.getWidth();
-        var height = this.getHeight();
-        x += 15;
-        y += 15;
-        if (x + width > windowWidth) {
-            x -= (x + width) - windowWidth;
-        }
-        if (y + height > windowHeight) {
-            y -= 20 + height;
-        }
-        Tooltip.prototype.setPosition.call(this, x, y);
+        this.onDomMouseMove = this.onDomMouseMove.bind(this);
+        this.onDomMouseOut = this.onDomMouseOut.bind(this);
+
+        this.setClassName("ace_gutter-tooltip");
     }
     
+    onDomMouseMove(domEvent) {
+        var aceEvent = new MouseEvent(domEvent, this.editor);
+        this.onMouseMove(aceEvent, this.editor);
+    }
+    
+    onDomMouseOut(domEvent) {
+        var aceEvent = new MouseEvent(domEvent, this.editor);
+        this.onMouseOut(aceEvent);
+    }
+
+    addToEditor(editor) {
+        var gutter = editor.renderer.$gutter;
+        gutter.addEventListener("mousemove", this.onDomMouseMove);
+        gutter.addEventListener("mouseout", this.onDomMouseOut);
+        super.addToEditor(editor);
+    }
+
+    removeFromEditor(editor) {
+        var gutter = editor.renderer.$gutter;
+        gutter.removeEventListener("mousemove", this.onDomMouseMove);
+        gutter.removeEventListener("mouseout", this.onDomMouseOut);
+        super.removeFromEditor(editor);
+    }
+
+    destroy() {
+        if (this.editor) {
+            this.removeFromEditor(this.editor);
+        }
+        super.destroy();
+    }
+
     static get annotationLabels() {
         return {
             error: {
@@ -176,6 +130,9 @@ class GutterTooltip extends Tooltip {
         };
     }
 
+    /**
+     * @param {number} row
+     */
     showTooltip(row) {
         var gutter = this.editor.renderer.$gutterLayer;
         var annotationsInRow = gutter.$annotations[row];
@@ -196,7 +153,7 @@ class GutterTooltip extends Tooltip {
             var severityRank = {error: 1, security: 2, warning: 3, info: 4, hint: 5};
             var mostSevereAnnotationTypeInFold;
 
-            for (let i = row + 1; i <= fold.end.row; i++) {
+            for (var i = row + 1; i <= fold.end.row; i++) {
                 if (!gutter.$annotations[i]) continue;
 
                 for (var j = 0; j < gutter.$annotations[i].text.length; j++) {
@@ -228,7 +185,7 @@ class GutterTooltip extends Tooltip {
         var iconClassName = gutter.$useSvgGutterIcons ? "ace_icon_svg" : "ace_icon";
 
         // Construct the contents of the tooltip.
-        for (let i = 0; i < annotation.displayText.length; i++) {
+        for (var i = 0; i < annotation.displayText.length; i++) {
             var lineElement = dom.createElement("span");
 
             var iconElement = dom.createElement("span");
@@ -248,9 +205,7 @@ class GutterTooltip extends Tooltip {
             annotationMessages[annotation.type[i].replace("_fold", "")].push(lineElement);
         }
 
-        // Clear the current tooltip content
-        var tooltipElement = this.getElement();
-        dom.removeChildren(tooltipElement);
+        var tooltipElement = dom.createElement("span");
 
         // Update the tooltip content
         annotationMessages.error.forEach((el) => tooltipElement.appendChild(el));
@@ -261,31 +216,92 @@ class GutterTooltip extends Tooltip {
 
         tooltipElement.setAttribute("aria-live", "polite");
 
-        if (!this.isOpen) {
-            this.setTheme(this.editor.renderer.theme);
-            this.setClassName("ace_gutter-tooltip");
+        var annotationNode = this.$findLinkedAnnotationNode(row);
+        if (annotationNode) {
+            annotationNode.setAttribute("aria-describedby", this.id);
         }
 
-        this.show();
+        var range = Range.fromPoints({row, column: 0}, {row, column: 0});
+        this.showForRange(this.editor, range, tooltipElement);
+        this.visibleTooltipRow = row;
         this.editor._signal("showGutterTooltip", this);
     }
 
-    hideTooltip() {
+    $setPosition(editor, _ignoredPosition, _withMarker, range) {
+        var gutterCell = this.$findCellByRow(range.start.row);
+        if (!gutterCell) return;
+        var el = gutterCell && gutterCell.element;
+        var anchorEl = el && (el.querySelector(".ace_gutter_annotation"));
+        if (!anchorEl) return;
+        var r = anchorEl.getBoundingClientRect();
+        if (!r) return;
+        var position = {
+            pageX: r.right,
+            pageY: r.top
+        };
+        //we don't need marker for gutter
+        return super.$setPosition(editor, position, false, range);
+    }
+
+    $shouldPlaceAbove(labelHeight, anchorTop, spaceBelow) {
+        return spaceBelow < labelHeight;
+    }
+
+    $findLinkedAnnotationNode(row) {
+        var cell = this.$findCellByRow(row);
+        if (cell) {
+            var element = cell.element;
+            if (element.childNodes.length > 2) {
+                return element.childNodes[2];
+            }
+        }
+    }
+
+    $findCellByRow(row) {
+        return this.editor.renderer.$gutterLayer.$lines.cells.find((el) => el.row === row);
+    }
+
+    hide(e) {
+        if(!this.isOpen){
+            return;
+        }
         this.$element.removeAttribute("aria-live");
-        this.hide();
+
+        if (this.visibleTooltipRow != undefined) {
+            var annotationNode = this.$findLinkedAnnotationNode(this.visibleTooltipRow);
+            if (annotationNode) {
+                annotationNode.removeAttribute("aria-describedby");
+            }
+        }
+        this.visibleTooltipRow = undefined;
         this.editor._signal("hideGutterTooltip", this);
+        super.hide(e);
     }
 
     static annotationsToSummaryString(annotations) {
-        const summary = [];
-        const annotationTypes = ["error", "security", "warning", "info", "hint"];
-        for (const annotationType of annotationTypes) {
+        var summary = [];
+        var annotationTypes = ["error", "security", "warning", "info", "hint"];
+        for (var annotationType of annotationTypes) {
             if (!annotations[annotationType].length) continue;
-            const label = annotations[annotationType].length === 1 ? GutterTooltip.annotationLabels[annotationType].singular : GutterTooltip.annotationLabels[annotationType].plural;
+            var label = annotations[annotationType].length === 1 ? GutterTooltip.annotationLabels[annotationType].singular : GutterTooltip.annotationLabels[annotationType].plural;
             summary.push(`${annotations[annotationType].length} ${label}`);
         }
         return summary.join(", ");
     }
+
+    /**
+     * Check if cursor is outside gutter
+     * @param e
+     * @return {boolean}
+     */
+    isOutsideOfText(e) {
+        var editor = e.editor;
+        var rect = editor.renderer.$gutter.getBoundingClientRect();
+        return !(e.clientX >= rect.left && e.clientX <= rect.right &&
+               e.clientY >= rect.top && e.clientY <= rect.bottom);
+    }
 }
+
+GutterTooltip.$uid = 0;
 
 exports.GutterTooltip = GutterTooltip;

@@ -1,4 +1,17 @@
 /**
+ * ## Theme enumeration utility
+ *
+ * Provides theme management for the Ace Editor by generating and organizing available themes into
+ * categorized collections. Automatically maps theme data into structured objects containing theme metadata including
+ * display captions, theme paths, brightness classification (dark/light), and normalized names. Exports both an
+ * indexed theme collection and a complete themes array for easy integration with theme selection components
+ * and configuration systems.
+ *
+ * @author <a href="mailto:matthewkastor@gmail.com">
+ *  Matthew Christopher Kastor-Inare III </a><br />
+ * @module
+ */
+/**
  * Generates a list of themes available when ace was built.
  * @fileOverview Generates a list of themes available when ace was built.
  * @author <a href="mailto:matthewkastor@gmail.com">
@@ -7,6 +20,14 @@
  */
 
 "use strict";
+
+/**
+ * @typedef {Object} Theme
+ * @property {string} caption - The display caption of the theme.
+ * @property {string} theme   - The path or identifier for the ACE theme.
+ * @property {boolean} isDark - Indicates whether the theme is dark or light.
+ * @property {string} name    - The normalized name used as the key.
+ */
 
 var themeData = [
     ["Chrome"         ],
@@ -54,11 +75,14 @@ var themeData = [
     ["CloudEditor Dark"     ,"cloud_editor_dark"       ,  "dark"]
 ];
 
-
+/**
+ * @type {Object<string, Theme>}
+ */
 exports.themesByName = {};
 
 /**
  * An array containing information about available themes.
+ * @type {Theme[]}
  */
 exports.themes = themeData.map(function(data) {
     var name = data[1] || data[0].replace(/ /g, "_").toLowerCase();

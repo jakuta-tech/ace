@@ -1,5 +1,4 @@
 if (typeof process !== "undefined") {
-    require("amd-loader");
     require("../test/mockdom");
 }
 
@@ -11,6 +10,7 @@ var Editor = require("../editor").Editor;
 var Mode = require("../mode/java").Mode;
 var VirtualRenderer = require("../virtual_renderer").VirtualRenderer;
 var assert = require("../test/assertions");
+var lang = require("../lib/lang");
 var MouseEvent = function(type, opts){
     var e = document.createEvent("MouseEvents");
     e.initMouseEvent(/click|wheel/.test(type) ? type : "mouse" + type,
@@ -48,7 +48,7 @@ var editor;
 
 module.exports = {
 
-    setUp : function(next) {
+    setUp : function() {
         this.editor = new Editor(new VirtualRenderer());
         this.editor.session.setValue("Juhu kinners!");
         this.editor.container.style.position = "absolute";
@@ -58,7 +58,6 @@ module.exports = {
         this.editor.container.style.top = "10px";
         document.body.appendChild(this.editor.container);
         editor = this.editor;
-        next();
     },
 
     "test: double tap. issue #956" : function() {
@@ -126,9 +125,9 @@ module.exports = {
         editor.setValue(value, -1);
         editor.renderer.$loop._flush();
         var lines = editor.renderer.$gutterLayer.$lines;
-        var toggler = lines.cells[0].element.children[1];
+        var toggler = lines.cells[0].element.childNodes[1];
+        toggler.style.leftHint = 100; // mockdom doesn't parse css to know the padding
         var rect = toggler.getBoundingClientRect();
-        if (!rect.left) rect.left = 100; // for mockdom
         toggler.dispatchEvent(MouseEvent("down", {x: rect.left, y: rect.top}));
         toggler.dispatchEvent(MouseEvent("up", {x: rect.left, y: rect.top}));
         toggler.dispatchEvent(MouseEvent("click", {x: rect.left, y: rect.top}));
@@ -147,6 +146,29 @@ module.exports = {
         toggler.dispatchEvent(e);
         editor.renderer.$loop._flush();
         assert.ok(parseInt(lines.cells[0].element.textContent) > 1);
+    },
+    "test: gutter click on wrapped line" : function() {
+        var editor = this.editor;
+        var value = "x {\n" + "  abc".repeat(100) + "\n}";
+        value = value.repeat(10);
+        editor.setValue(value, -1);
+        editor.setOption("wrap", 40);
+        editor.renderer.$loop._flush();
+        var lines = editor.renderer.$gutterLayer.$lines;
+        var toggler = lines.cells[1].element;
+        var rect = toggler.getBoundingClientRect();
+        editor.isFocused = () => true;
+        editor.focus();
+        
+        assert.position(editor.getCursorPosition(), 0, 0);
+
+        toggler.dispatchEvent(MouseEvent("down", {x: rect.left, y: rect.top + rect.height / 2}));
+        editor.renderer.$loop._flush();         
+        assert.position(editor.getCursorPosition(), 1, 0);
+
+        toggler.dispatchEvent(MouseEvent("up", {x: rect.left, y: rect.top + rect.height - 1}));
+        editor.renderer.$loop._flush();
+        assert.position(editor.getCursorPosition(), 2, 0);
     },
     "test: wheel" : function() {
         var editor = this.editor;
@@ -172,7 +194,7 @@ module.exports = {
         assert.ok(parseInt(lines.cells[0].element.textContent) > 10);
     },
     
-    "test: touch" : function(done) {
+    "test: touch" : async function(done) {
         var editor = this.editor;
         var value = "x {" + "\n  abc".repeat(10) + "\n}";
         value = value.repeat(10);
@@ -234,19 +256,18 @@ module.exports = {
         // tap and drag in other places scrolls
         sendTouchEvent("start", {touches: [touchPos(8, 3)]}, editor);
         sendTouchEvent("move", {touches: [touchPos(8, 3)]}, editor);
-        setTimeout(function() {
-            sendTouchEvent("move", {touches: [touchPos(1, 3)]}, editor);
-            sendTouchEvent("end", {touches: [touchPos(1, 3)]}, editor);
-            editor.renderer.$loop._flush();
-            assert.equal(editor.renderer.getFirstFullyVisibleRow(), 7);
-            
-            // editor animates scrolling
-            setTimeout(function() {
-                assert.notOk(menu.clientHeight);
-                assert.ok(editor.renderer.getFirstFullyVisibleRow() > 7);
-                done();
-            }, 50);
-        }, 2);
+
+        await lang.sleep(2);
+        sendTouchEvent("move", {touches: [touchPos(1, 3)]}, editor);
+        sendTouchEvent("end", {touches: [touchPos(1, 3)]}, editor);
+        editor.renderer.$loop._flush();
+        assert.equal(editor.renderer.getFirstFullyVisibleRow(), 7);
+
+        // editor animates scrolling
+        await lang.sleep(50);
+        assert.notOk(menu.clientHeight);
+        assert.ok(editor.renderer.getFirstFullyVisibleRow() > 7);
+        done();
     },
     
     "test: touch selection with scrollMargin" : function() {
@@ -287,6 +308,4 @@ module.exports = {
 };
 
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("../test/run")(module);

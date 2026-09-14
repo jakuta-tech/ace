@@ -152,5 +152,31 @@
         // space-unary-ops: 2, // require or disallow spaces before/after unary operators (fixable)
         // spaced-comment: [2, "always", { markers: ["-", "*", "/", "{", "}", "#"], exceptions: ["}"] }]
 
-    }
+    },
+    
+
+    overrides: [
+        // allow async/await in tests only
+        {
+            files: ["**/*_test.js", "src/test/*.js"],
+            parserOptions: {
+                ecmaVersion: 2022, 
+            },
+            env: {
+            },
+            rules: {
+            },
+        },
+        // allow negative lookbehinds in regExp's
+        {
+            files: ["**/*_highlight_rules.js"],
+            parserOptions: {
+                ecmaVersion: 2018,
+            },
+            env: {
+            },
+            rules: {
+            },
+        }
+    ]
 }

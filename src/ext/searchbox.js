@@ -1,3 +1,31 @@
+/**
+ * ## Interactive search and replace UI extension for text editing
+ *
+ * Provides a floating search box interface with find/replace functionality including live search results, regex
+ * support, case sensitivity options, whole word matching, and scoped selection searching. Features keyboard shortcuts
+ * for quick access and navigation, with visual feedback for search matches and a counter showing current position
+ * in results.
+ *
+ * **Key Features:**
+ * - Real-time search with highlighted matches
+ * - Find and replace with individual or bulk operations
+ * - Advanced options: regex, case sensitivity, whole words, search in selection
+ * - Keyboard navigation and shortcuts
+ * - Visual match counter and no-match indicators
+ *
+ * **Usage:**
+ * ```javascript
+ * // Show search box
+ * require("ace/ext/searchbox").Search(editor);
+ *
+ * // Show with replace functionality
+ * require("ace/ext/searchbox").Search(editor, true);
+ * ```
+ *
+ * @module
+ */
+
+
 "use strict";
 /**
  * @typedef {import("../editor").Editor} Editor
@@ -21,10 +49,10 @@ class SearchBox {
      * @param {never} [showReplaceForm]
      */
     constructor(editor, range, showReplaceForm) {
-        /**@type {any}*/
+        /**@type {HTMLInputElement}*/
         this.activeInput;
-        var div = dom.createElement("div");
-        dom.buildDom(["div", {class:"ace_search right"},
+        /**@type {HTMLDivElement}*/
+        this.element = dom.buildDom(["div", {class:"ace_search right"},
             ["span", {action: "hide", class: "ace_searchbtn_close"}],
             ["div", {class: "ace_search_form"},
                 ["input", {class: "ace_search_field", placeholder: nls("search-box.find.placeholder", "Search for"), spellcheck: "false"}],
@@ -46,15 +74,15 @@ class SearchBox {
                 ["span", {action: "toggleWholeWords", class: "ace_button", title: nls("search-box.toggle-whole-word.title", "Whole Word Search")}, "\\b"],
                 ["span", {action: "searchInSelection", class: "ace_button", title: nls("search-box.toggle-in-selection.title", "Search In Selection")}, "S"]
             ]
-        ], div);
-        /**@type {any}*/
-        this.element = div.firstChild;
+        ]);
 
         this.setSession = this.setSession.bind(this);
+        this.$onEditorInput = this.onEditorInput.bind(this);
 
         this.$init();
         this.setEditor(editor);
         dom.importCssString(searchboxCss, "ace_searchbox", editor.container);
+        event.addListener(this.element, "touchstart", function(e) { e.stopPropagation(); }, editor);
     }
 
     /**
@@ -70,6 +98,11 @@ class SearchBox {
     setSession(e) {
         this.searchRange = null;
         this.$syncOptions(true);
+    }
+
+    // Auto update "updateCounter" and "ace_nomatch"
+    onEditorInput() {
+        this.find(false, false, true);
     }
 
     /**
@@ -129,6 +162,10 @@ class SearchBox {
             }
         });
 
+        /**
+         * @type {{schedule: (timeout?: number) => void}}
+         * @external
+        */
         this.$onChange = lang.delayedCall(function() {
             _this.find(false, false);
         });
@@ -158,6 +195,7 @@ class SearchBox {
 
     /**
      * @param {boolean} [preventScroll]
+     * @external
      */
     $syncOptions(preventScroll) {
         dom.setCssClass(this.replaceOption, "checked", this.searchRange);
@@ -186,6 +224,7 @@ class SearchBox {
      * @param {any} [preventScroll]
      */
     find(skipCurrent, backwards, preventScroll) {
+        if (!this.editor.session) return;
         var range = this.editor.find(this.searchInput.value, {
             skipCurrent: skipCurrent,
             backwards: backwards,
@@ -213,6 +252,15 @@ class SearchBox {
             var value = this.searchRange
                 ? editor.session.getTextRange(this.searchRange)
                 : editor.getValue();
+
+            /**
+             * Convert all line ending variations to Unix-style = \n
+             * Windows (\r\n), MacOS Classic (\r), and Unix (\n)
+             */
+            if (editor.$search.$isMultilineSearch(editor.getLastSearchOptions())) {
+                value = value.replace(/\r\n|\r|\n/g, "\n");
+                editor.session.doc.$autoNewLine = "\n";
+            }
 
             var offset = editor.session.doc.positionToIndex(editor.selection.anchor);
             if (this.searchRange)
@@ -274,6 +322,7 @@ class SearchBox {
         this.active = false;
         this.setSearchRange(null);
         this.editor.off("changeSession", this.setSession);
+        this.editor.off("input", this.$onEditorInput);
 
         this.element.style.display = "none";
         this.editor.keyBinding.removeKeyboardHandler(this.$closeSearchBarKb);
@@ -287,10 +336,14 @@ class SearchBox {
     show(value, isReplace) {
         this.active = true;
         this.editor.on("changeSession", this.setSession);
+        this.editor.on("input", this.$onEditorInput);
         this.element.style.display = "";
         this.replaceOption.checked = isReplace;
 
-        if (value)
+        if (this.editor.$search.$options.regExp)
+            value = lang.escapeRegExp(value);
+
+        if (value != undefined)
             this.searchInput.value = value;
 
         this.searchInput.focus();
@@ -348,7 +401,7 @@ $searchBarKb.bindKeys({
             sb.replaceAll();
         sb.findAll();
     },
-    "Tab": function(sb) {
+    "Tab|Shift-Tab": function(sb) {
         (sb.activeInput == sb.replaceInput ? sb.searchInput : sb.replaceInput).focus();
     }
 });
@@ -404,13 +457,16 @@ SearchBox.prototype.$closeSearchBarKb = $closeSearchBarKb;
 exports.SearchBox = SearchBox;
 
 /**
+ * Shows the search box for the editor with optional replace functionality.
  *
- * @param {Editor} editor
- * @param {boolean} [isReplace]
+ * @param {Editor} editor - The editor instance
+ * @param {boolean} [isReplace] - Whether to show replace options
  */
 exports.Search = function(editor, isReplace) {
     var sb = editor.searchBox || new SearchBox(editor);
-    sb.show(editor.session.getTextRange(), isReplace);
+    var range = editor.session.selection.getRange();
+    var value = range.isMultiLine() ? "" : editor.session.getTextRange(range);
+    sb.show(value, isReplace);
 };
 
 

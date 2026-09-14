@@ -4,7 +4,15 @@ var useragent = require("./useragent");
 var XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 /**
- * 
+ * @template {keyof HTMLElementTagNameMap} K
+ * @overload
+ * @param {[K, ...any[]]} arr
+ * @param {HTMLElement} [parent]
+ * @param {Record<string, Node>} [refs]
+ * @returns {HTMLElementTagNameMap[K]} 
+ */
+/**
+ * @overload
  * @param {any} arr
  * @param {HTMLElement} [parent]
  * @param [refs]
@@ -79,10 +87,8 @@ exports.getDocumentHead = function(doc) {
  * @returns {HTMLElementTagNameMap[T]}
  */
 exports.createElement = function(tag, ns) {
-    // @ts-ignore
-    return document.createElementNS ?
-            document.createElementNS(ns || XHTML_NS, tag) :
-            document.createElement(tag);
+    // @ts-expect-error
+    return document.createElementNS ? document.createElementNS(ns || XHTML_NS, tag) : document.createElement(tag);
 };
 
 /**
@@ -230,6 +236,11 @@ function insertPendingStyles() {
     });
 }
 
+/**
+ * @param {string} cssText
+ * @param {string} [id]
+ * @param {any} [target]
+ */
 function importCssString(cssText, id, target) {
     if (typeof document == "undefined")
         return;
@@ -277,6 +288,43 @@ exports.importCssString = importCssString;
  */
 exports.importCssStylsheet = function(uri, doc) {
     exports.buildDom(["link", {rel: "stylesheet", href: uri}], exports.getDocumentHead(doc));
+};
+
+/**
+ * Due to bug in html specification fixed position elements are placed relative to 
+ * ancestor with transform instead of screen, so we attempt to detect and compensate for that
+ * @param {HTMLElement} el with position: fixed
+ */
+exports.$fixPositionBug = function(el) {
+    var rect = el.getBoundingClientRect();
+    if (el.style.left) {
+        var target = parseFloat(el.style.left);
+        var result = +rect.left;
+        if (Math.abs(target - result) > 1) {
+            el.style.left = 2 * target - result + "px";
+        }
+    }
+    if (el.style.right) {
+        var target = parseFloat(el.style.right);
+        var result = window.innerWidth - rect.right;
+        if (Math.abs(target - result) > 1) {
+            el.style.right = 2 * target - result + "px";
+        }
+    }
+    if (el.style.top) {
+        var target = parseFloat(el.style.top);
+        var result = +rect.top;
+        if (Math.abs(target - result) > 1) {
+            el.style.top = 2 * target - result + "px";
+        }
+    }
+    if (el.style.bottom) {
+        var target = parseFloat(el.style.bottom);
+        var result = window.innerHeight - rect.bottom;
+        if (Math.abs(target - result) > 1) {
+            el.style.bottom = 2 * target - result + "px";
+        }
+    }
 };
 
 /**

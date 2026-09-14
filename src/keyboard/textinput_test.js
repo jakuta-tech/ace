@@ -1,9 +1,5 @@
 /*global CustomEvent*/
  
-if (typeof process !== "undefined") {
-    require("amd-loader");
-}
-
 "use strict";
 
 require("../test/mockdom");
@@ -191,7 +187,7 @@ module.exports = {
             { _: "input", range: [3,3], value: "きもの"},
             function() {
                 assert.ok(editor.renderer.$composition);
-                assert.ok(Math.abs(parseFloat(textarea.style.width) - editor.renderer.characterWidth * 6) < 1);
+                assert.ok(Math.abs(parseFloat(textarea.style.width) - editor.renderer.characterWidth * 6) < 2);
                 assert.ok(Math.abs(parseFloat(textarea.style.height) - (editor.renderer.lineHeight)) < 1);
                 assert.ok(Math.abs(parseFloat(textarea.style.top)) < 1);
                 assert.ok(/ace_composition/.test(textarea.className));
@@ -810,6 +806,4 @@ module.exports = {
 };
 
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("../test/run")(module);

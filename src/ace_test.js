@@ -7,6 +7,7 @@ if (typeof process !== "undefined") {
 var dom = require("./lib/dom");
 var ace = require("./ace");
 var assert = require("./test/assertions");
+var lang = require("./lib/lang");
 
 module.exports = {
    "test: ace edit" : function() {
@@ -49,8 +50,9 @@ module.exports = {
         assert.equal(el, editor.container);
         assert.equal("h", editor.getValue());
         document.body.removeChild(el);
+        editor.destroy();
     },
-    "test: destroy": function(done) {
+    "test: destroy": async function(done) {
         var editor = ace.edit();
         var mouseTarget = editor.renderer.getMouseEventTarget();
         var textarea = editor.textInput.getElement();
@@ -76,15 +78,14 @@ module.exports = {
         click(mouseTarget);
         assert.equal(focusCalled, 1);
 
-        setTimeout(function() {
-            assert.notOk(!!editor.curOp);
-            
-            // input commands on destroed editor without session do not throw errors
-            editor.setSession(null);
-            sendText(textarea, "2");
-            
-            done();
-        });
+        await lang.sleep(0);
+        assert.notOk(!!editor.curOp);
+
+        // input commands on destroed editor without session do not throw errors
+        editor.setSession(null);
+        sendText(textarea, "2");
+
+        done();
     },
     "test: useStrictCSP": function() {
         ace.config.set("useStrictCSP", undefined);
@@ -101,7 +102,7 @@ module.exports = {
         ace.config.set("useStrictCSP", false);
         assert.ok(getStyleNode());
     },
-    "test: resizeObserver": function(done) {
+    "test: resizeObserver": async function(done) {
         var mockObserver = {
             disconnect: function() { mockObserver.target = null; },
             observe: function(el) {
@@ -131,30 +132,58 @@ module.exports = {
         assert.equal(editor.renderer.$size.width, 100);
         editor.container.style.width = "200px";
         mockObserver.call();
-        setTimeout(function() {
-            if (editor.renderer.$resizeTimer.isPending())
-                editor.renderer.$resizeTimer.call();
-            assert.equal(editor.renderer.$size.width, 200);
-            editor.container.style.height = "200px";
-            mockObserver.call();
-            setTimeout(function() {
-                assert.ok(editor.renderer.$resizeTimer.isPending());
-                editor.container.style.height = "100px";
-                mockObserver.call();
-                setTimeout(function() {
-                    assert.ok(!editor.renderer.$resizeTimer.isPending());
-                    editor.setOption("useResizeObserver", false);
-                    editor.container.style.height = "300px";
-                    mockObserver.call();
-                    assert.ok(!editor.renderer.$resizeObserver);
-                    editor.setOption("useResizeObserver", true);
-                    assert.ok(editor.renderer.$resizeObserver);
-                    if (window.ResizeObserver === mockObserver.$create)
-                        window.ResizeObserver = undefined;
-                    done();
-                }, 15);
-            }, 15);
-        }, 15);
+
+        await lang.sleep(15);
+        if (editor.renderer.$resizeTimer.isPending())
+            editor.renderer.$resizeTimer.call();
+        assert.equal(editor.renderer.$size.width, 200);
+        editor.container.style.height = "200px";
+        mockObserver.call();
+
+        await lang.sleep(15);
+        assert.ok(editor.renderer.$resizeTimer.isPending());
+        editor.container.style.height = "100px";
+        mockObserver.call();
+
+        await lang.sleep(15);
+        assert.ok(!editor.renderer.$resizeTimer.isPending());
+        editor.setOption("useResizeObserver", false);
+        editor.container.style.height = "300px";
+        mockObserver.call();
+        assert.ok(!editor.renderer.$resizeObserver);
+        editor.setOption("useResizeObserver", true);
+        assert.ok(editor.renderer.$resizeObserver);
+        if (window.ResizeObserver === mockObserver.$create)
+            window.ResizeObserver = undefined;
+        editor.destroy();
+        done();
+    },
+    "test: block cursor uses character under cursor": function() {
+        var editor = ace.edit(null, {
+            value: "abc"
+        });
+        document.body.appendChild(editor.container);
+
+        var fontMetrics = editor.renderer.$fontMetrics;
+        var lineElement = document.createElement("div");
+        lineElement.appendChild(document.createTextNode("abc"));
+        document.body.appendChild(lineElement);
+
+        fontMetrics.$findElementForScreenRow = function() {
+            return lineElement;
+        };
+        fontMetrics.textLayer.element.getBoundingClientRect = function() {
+            return {left: 0, top: 0, width: 100, height: 100};
+        };
+        editor.renderer.$blockCursor = true;
+
+        assert.equal(fontMetrics.$pixelToColumn(0, 0, 0, true), 0);
+        assert.equal(fontMetrics.$pixelToColumn(0, 0, 4, true), 0);
+        assert.equal(fontMetrics.$pixelToColumn(0, 0, 8, true), 1);
+        assert.equal(fontMetrics.$pixelToColumn(0, 0, 14, true), 2);
+
+        lineElement.remove();
+        editor.destroy();
     },
     "test: edit template" : function() {
         var template = document.createElement("template");
@@ -184,6 +213,4 @@ function sendText(textarea, text) {
 }
 
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("./test/run")(module);

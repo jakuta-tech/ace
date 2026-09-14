@@ -1,6 +1,3 @@
-if (typeof process !== "undefined")
-    require("amd-loader");
-
 "use strict";
 
 var YamlMode = require("../yaml").Mode;
@@ -81,5 +78,4 @@ module.exports = {
 };
 
 
-if (typeof module !== "undefined" && module === require.main)
-    require("asyncjs").test.testcase(module.exports).exec();
+require("../../test/run")(module);

@@ -19,22 +19,20 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [16.x]
+        node-version: [22.x]
 
     steps:
     - uses: actions/checkout@v2
     - name: Fetch the master branch
       run: git fetch origin HEAD:refs/remotes/origin/HEAD --depth 1
-    - name: Fetch the master branch
-      run: git diff --name-only origin/HEAD --no-renames --diff-filter=ACMR
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v1
       with:
         node-version: ${{ matrix.node-version }}
     - run: npm i
-    - run: npm run cover
-    # run linter
-    - run: |
+    - run: npm run cover-json && mv ./coverage/coverage-final.json ./coverage/coverage.json
+    - run: | 
+        # eslint
         set -x;
         git status;
         git checkout HEAD -- package.json;
@@ -51,11 +49,19 @@ jobs:
                 node node_modules/eslint/bin/eslint $jsChanges;
             fi
         fi
-    # check types
-    - run: npm run update-types
-    - run: node_modules/.bin/tsc --noImplicitAny --strict --noUnusedLocals --noImplicitReturns --noUnusedParameters --noImplicitThis ace.d.ts
-    - run: npm run typecheck
-    - run: git diff --exit-code ./ace-modes.d.ts ./ace.d.ts
+    - run: | 
+        # check types
+        set -x;
+        npx tsc -v;
+        npm run update-types;
+        git diff --color --exit-code ./ace*d.ts;
+        npm run typecheck;
+        node_modules/.bin/tsc --noImplicitAny --strict --noUnusedLocals --noImplicitReturns --noUnusedParameters --noImplicitThis ace.d.ts;
+    - run: | 
+        # test-npm-package
+        set -x;
+        ./tool/test-npm-package.sh
+    # upload to codecov
     - uses: codecov/codecov-action@v3
       with:
         token: d8edca4b-8e97-41e5-b54e-34c7cf3b2d47

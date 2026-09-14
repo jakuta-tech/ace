@@ -1,5 +1,4 @@
 if (typeof process !== "undefined") {
-    require("amd-loader");
     require("./test/mockdom");
 }
 
@@ -17,9 +16,8 @@ var config = require("./config");
 var loadModule = config.loadModule;
 
 module.exports = {
-    setUp : function(next) {
+    setUp : function() {
         this.editor = new Editor(new MockRenderer());
-        next();
     },
     tearDown: function() {
         config.loadModule = loadModule;
@@ -223,7 +221,7 @@ module.exports = {
         editor.setValue("foo\nbar");
         editor.selectAll();
         var D = Date;
-        var d = new Date(0);
+        var d = new Date('1970-01-01T00:00:00');
         d.setHours(4);
         d.setMinutes(0);
         Date = function() { return d; }; // eslint-disable-line
@@ -401,6 +399,4 @@ module.exports = {
 };
 
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("./test/run")(module);

@@ -1,5 +1,4 @@
 if (typeof process !== "undefined") {
-    require("amd-loader");
     require("../test/mockdom");
 }
 
@@ -13,7 +12,7 @@ var dom = require("../lib/dom");
 
 module.exports = {
 
-    setUp: function(next) {
+    setUp: function() {
         this.session = new EditSession("");
         this.session.setMode(new JavaScriptMode());
         this.textLayer = new TextLayer(document.createElement("div"));
@@ -22,7 +21,6 @@ module.exports = {
             characterWidth: 10,
             lineHeight: 20
         };
-        next();
     },
 
     "test: render line with hard tabs should render the same as lines with soft tabs" : function() {
@@ -44,13 +42,13 @@ module.exports = {
         
         var parent = dom.createElement("div");
         this.textLayer.$renderLine(parent, 0);
-        assert.domNode(parent, ["div", {}, ["span", {class: "ace_cjk", style: "width: 20px;"}, "\u3000"]]);
+        assert.domNode(parent, ["div", {}, "\u3000"]);
 
         this.textLayer.setShowInvisibles(true);
         var parent = dom.createElement("div");
         this.textLayer.$renderLine(parent, 0);
         assert.domNode(parent, ["div", {},
-            ["span", {class: "ace_cjk ace_invisible ace_invisible_space", style: "width: 20px;"}, this.textLayer.SPACE_CHAR],
+            ["span", {class: "ace_invisible ace_invisible_space"}, this.textLayer.CJK_SPACE_CHAR],
             ["span", {class: "ace_invisible ace_invisible_eol"}, "\xB6"]
         ]);
     },
@@ -92,6 +90,4 @@ module.exports = {
 };
 
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("../test/run")(module);

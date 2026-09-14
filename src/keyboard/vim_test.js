@@ -1,5 +1,4 @@
 if (typeof process !== "undefined") {
-    require("amd-loader");
     require("../test/mockdom");
 }
 
@@ -40,6 +39,9 @@ editor.setOptions({
     behavioursEnabled: false,
 });
 function CodeMirror(place, opts) {
+    if (!editor.container.parentNode) {
+        document.body.appendChild(editor.container);
+    }
     var cm = editor.state && editor.state.cm;
     if (cm && cm.state.currentNotificationClose)
         cm.state.currentNotificationClose();
@@ -1571,7 +1573,15 @@ testVim('=', function(cm, vim, helpers) {
   var expectedValue = 'word1\nword2\nword3';
   helpers.doKeys('=');
   eq(expectedValue, cm.getValue());
-}, { value: '   word1\n  word2\n  word3', indentUnit: 2 });
+}, { value: '  word1\n  word2\n  word3', indentUnit: 2 });
+testVim('><visualblock', function(cm, vim, helpers) {
+  cm.setCursor(0, 6);
+  helpers.doKeys('<C-v>', 'j', 'j');
+  helpers.doKeys('4', '>');
+  eq('  word        1\n  word        2\n  word        3', cm.getValue());
+  helpers.doKeys('g', 'v', '14', '<');
+  eq('  word1\n  word2\n  word3', cm.getValue());
+}, { value: '  word1\n  word2\n  word3', indentUnit: 2 });
 
 
 // Edit tests
@@ -6027,6 +6037,4 @@ var typeKey = function() {
 }();
 
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("../test/run")(module);

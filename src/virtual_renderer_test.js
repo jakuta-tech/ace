@@ -1,5 +1,4 @@
 if (typeof process !== "undefined") {
-    require("amd-loader");
     require("./test/mockdom");
 }
 
@@ -11,6 +10,7 @@ var EditSession = require("./edit_session").EditSession;
 var VirtualRenderer = require("./virtual_renderer").VirtualRenderer;
 var vim = require("./keyboard/vim");
 var assert = require("./test/assertions");
+var lang = require("./lib/lang");
 
 function setScreenPosition(node, rect) {
     node.style.left = rect[0] + "px";
@@ -38,6 +38,7 @@ module.exports = {
         el.style.top = "30px";
         el.style.width = "300px";
         el.style.height = "100px";
+        el.style.position = "fixed";
         document.body.appendChild(el);
         var renderer = new VirtualRenderer(el);
         editor = new Editor(renderer);
@@ -49,7 +50,7 @@ module.exports = {
         editor && editor.destroy();
         editor = null;
     },
-    "test: screen2text the column should be rounded to the next character edge" : function(done) {
+    "test: screen2text the column should be rounded to the next character edge" : function() {
         var renderer = editor.renderer;
 
         renderer.setPadding(0);
@@ -60,66 +61,91 @@ module.exports = {
             assert.position(renderer.screenToTextCoordinates(x+r.left, y+r.top), row, column);
         }
 
-        renderer.characterWidth = 10;
-        renderer.lineHeight = 15;
-
-        testPixelToText(4, 0, 0, 0);
-        testPixelToText(5, 0, 0, 1);
-        testPixelToText(9, 0, 0, 1);
-        testPixelToText(10, 0, 0, 1);
-        testPixelToText(14, 0, 0, 1);
-        testPixelToText(15, 0, 0, 2);
-        done();
+        testPixelToText(renderer.characterWidth * 0.4, 0, 0, 0);
+        testPixelToText(renderer.characterWidth * 0.5, 0, 0, 1);
+        testPixelToText(renderer.characterWidth * 0.9, 0, 0, 1);
+        testPixelToText(renderer.characterWidth * 1.0, 0, 0, 1);
+        testPixelToText(renderer.characterWidth * 1.4, 0, 0, 1);
+        testPixelToText(renderer.characterWidth * 1.5, 0, 0, 2);
     },
-    "test: handle css transforms" : function(done) {
+    "test: handle css transforms" : function() {
+        editor.setValue("hello world\nabc -א,ב,ג+ xyz");
         var renderer = editor.renderer;
         var fontMetrics = renderer.$fontMetrics;
+        editor.setOption("hasCssTransforms", true);
         setScreenPosition(editor.container, [20, 30, 300, 100]);
-        var measureNode = fontMetrics.$measureNode;
-        setScreenPosition(measureNode, [0, 0, 10 * measureNode.textContent.length, 15]);
-        setScreenPosition(fontMetrics.$main, [0, 0, 10 * measureNode.textContent.length, 15]);
         
-        fontMetrics.$characterSize.width = 10;
-        renderer.setPadding(0);
         renderer.onResize(true);
         
-        assert.equal(fontMetrics.getCharacterWidth(), 1);
-        
-        renderer.characterWidth = 10;
-        renderer.lineHeight = 15;
-        
-        renderer.gutterWidth = 40;
-        editor.setOption("hasCssTransforms", true);
-        editor.container.style.transform = "matrix3d(0.7, 0, 0, -0.00066, 0, 0.82, 0, -0.001, 0, 0, 1, 0, -100, -20, 10, 1)";
-        editor.container.style.zoom = 1.5;
-        var pos = renderer.pixelToScreenCoordinates(100, 200);
-        
-        var els = fontMetrics.els;
-        var rects = [
-            [0, 0],
-            [-37.60084843635559, 161.62494659423828],
-            [114.50254130363464, -6.890693664550781],
-            [98.85665202140808, 179.16063690185547]
-        ];
-        rects.forEach(function(rect, i) {
-            els[i].getBoundingClientRect = function() { 
-                return { left: rect[0], top: rect[1] };
-            };
-        });
-        
-        var r0 = els[0].getBoundingClientRect();
-        pos = renderer.pixelToScreenCoordinates(r0.left + 100, r0.top + 200);
-        assert.position(pos, 10, 11);
-        
-        var pos1 = fontMetrics.transformCoordinates(null, [0, 200]);
-        assert.ok(pos1[0] - rects[2][0] < 10e-6);
-        assert.ok(pos1[1] - rects[2][1] < 10e-6);
-        editor.renderer.$loop._flush();
-        
-        done();
+        editor.container.style.transformOrigin = "0 0";
+        var H1 = -0.0007, H2 = -0.001;
+        var m0 = 0.7, m1 = 0.1, m2 = 0.3, m3 = 0.82;
+        var t1 = 100, t2 = 20;
+        function testTransform() {
+            fontMetrics.config.$transformData = null;
+            editor.container.style.transform = `matrix3d(
+                ${m0},  ${m2},    0,   ${H1},
+                ${m1},  ${m3},    0,   ${H2}, 
+                0,      0,        1,    0, 
+                ${t1},  ${t2},    0,    1
+            )`;
+            
+            var expected = [
+                m0 - H1* t1, m1 - H2* t1, 0,
+                m2 - H1* t2, m3 - H2* t2, 0,
+                H1,          H2,          1
+            ];
+
+            project(expected, [20, 30]); 
+
+            var transform = editor.renderer.$fontMetrics.getTransform();
+
+            for (var i = 0; i < 9; i++) {
+                assert.ok(Math.abs(transform.M[i] - expected[i]) < 10e-6, `Expected M[${i}] to be approximately ${expected[i]}, but got ${transform.M[i]}`);
+            }
+
+            assert.equal(transform.t + "", [100 + 20, 20 + 30] + "");
+            
+            var p = project(expected, [
+                renderer.gutterWidth + renderer.$padding + renderer.characterWidth * 4,
+                renderer.lineHeight / 2
+            ]);
+            p[0] += transform.t[0];
+            p[1] += transform.t[1];
+
+            var pos = renderer.pixelToScreenCoordinates(p[0], p[1]);
+            
+            var docPos = editor.session.screenToDocumentPosition(pos.row, pos.column);
+            assert.position(docPos, 0, 4);
+
+            editor.renderer.$loop._flush();
+        }
+
+        testTransform();
+        H1 = H2 = 0;
+        testTransform();
+        m0 = m1 = m3 = 1;
+        m2 = -1;
+        testTransform();
+
+        function project(M, point) {
+            var px = point[0], py = point[1];
+            var k = 1 / (M[6] * px + M[7] * py + M[8]);
+            return [(M[0] * px + M[1] * py + M[2]) * k, (M[3] * px + M[4] * py + M[5]) * k];
+        }
     },
-    
-    "test scrollmargin + autosize": function(done) {
+    "test pixelposition in surrogate pairs": function() {
+        var renderer = editor.renderer;
+        editor.setValue("ab\ud83d\ude02cd");
+        renderer.onResize(true);
+        var p1 = renderer.textToScreenCoordinates(0, 2);
+        var p2 = renderer.textToScreenCoordinates(0, 4);
+        for (var i = 0.01; i <= 1.1; i+=0.1) {
+            var pos = renderer.pixelToScreenCoordinates((1-i) * p1.pageX+ i * p2.pageX, p1.pageY);
+            assert.position(pos, 0, i < 0.5 ? 2 : 4);
+        }
+    },
+    "test scrollmargin + autosize": async function(done) {
         editor.setOptions({
             maxLines: 100,
             wrap: true
@@ -127,11 +153,57 @@ module.exports = {
         editor.renderer.setScrollMargin(10, 10);
         editor.setValue("\n\n");
         editor.setValue("\n\n\n\n");
-        editor.renderer.once("afterRender", function() {
-            setTimeout(function() {
-                done();
-            }, 0);
+        await editor.renderer.once("afterRender");
+        done();
+    },
+
+    "test scrollbars after value change": function() {
+        editor.container.style.height = "0px";
+        editor.setOptions({
+            maxLines: 8,
         });
+        var renderCount = 0;
+        editor.renderer.on("afterRender", function(e) {
+            renderCount++;
+        });
+        // horizontal scroll
+        editor.setValue("\n");
+        editor.resize(true);
+        editor.renderer.$loop._flush(); // 1
+        assert.notOk(editor.renderer.scrollBarH.isVisible);
+        assert.notOk(editor.renderer.scrollBar.isVisible);
+        editor.setValue("\n\n\n\n" + "_".repeat(30));
+        editor.resize(true);
+        editor.renderer.$loop._flush(); // 2
+        assert.notOk(editor.renderer.scrollBarH.isVisible);
+        assert.notOk(editor.renderer.scrollBar.isVisible);
+        editor.setValue("\n\n\n\n" + "_".repeat(100));
+        editor.resize(true);
+        editor.renderer.$loop._flush(); // 3
+        assert.ok(editor.renderer.scrollBarH.isVisible);
+        assert.notOk(editor.renderer.scrollBar.isVisible);
+        // vertical scroll
+        editor.setValue("\n".repeat(9));
+        editor.resize(true);
+        editor.renderer.$loop._flush(); // 4
+        assert.notOk(editor.renderer.scrollBarH.isVisible);
+        assert.ok(editor.renderer.scrollBar.isVisible);
+        // vertical and horizontal scroll
+        editor.setValue("\n");
+        editor.resize(true);
+        editor.renderer.$loop._flush(); // 5
+        editor.setValue("\n".repeat(9) + "_".repeat(100));
+        editor.resize(true);
+        editor.renderer.$loop._flush(); // 6
+        assert.notOk(editor.renderer.scrollBarH.isVisible);
+        assert.ok(editor.renderer.scrollBar.isVisible);
+        editor.resize(true);
+        editor.renderer.$loop._flush(); // 7
+        // autosize changes vscroll value in which case updates longestLine
+        // this is why it renders an extra time
+        assert.ok(editor.renderer.scrollBarH.isVisible);
+        assert.ok(editor.renderer.scrollBar.isVisible);
+        assert.equal(renderCount, 7);
     },
 
     "test autosize from 0 height": function() {
@@ -239,10 +311,11 @@ module.exports = {
         editor._signal("input", {});
         assert.equal(editor.renderer.content.textContent, "only visible for empty value");
     },
-    "test: highlight indent guide": function () {
+    "test: highlight indent guide": async function (done) {
         editor.session.setValue(
             "function Test() {\n" + "    function Inner() {\n" + "        \n" + "        \n" + "    }\n" + "}");
         editor.setOption("highlightIndentGuides", false);
+        editor.setOption("wrap", 10); // to make sure higlight works with wrapped lines
         editor.session.selection.$setSelection(1, 22, 1, 22);
         editor.resize(true);
 
@@ -260,6 +333,13 @@ module.exports = {
         editor.session.selection.$setSelection(1, 15, 1, 15);
         editor.resize(true);
         assertIndentGuides( 0);
+
+        editor.session.selection.clearSelection();
+        editor.session.selection.$setSelection(4, 5, 4, 5);
+
+        await lang.sleep(100);
+        assertIndentGuides(2);
+        done();
     },
     "test annotation marks": function() {
         function findPointFillStyle(imageData, x, y) {
@@ -404,33 +484,34 @@ module.exports = {
 
         assert.equal(editor.session.lineWidgets, null);
     },
-    "test: brackets highlighting": function (done) {
+    "test: brackets highlighting": async function (done) {
         var renderer = editor.renderer;
         editor.session.setValue(
             "function Test() {\n" + "    function Inner(){\n" + "        \n" + "        \n" + "    }\n" + "}");
         editor.session.selection.$setSelection(1, 21, 1, 21);
         renderer.$loop._flush();
 
-        setTimeout(function () {
-            assert.ok(editor.session.$bracketHighlight);
-            assert.range(editor.session.$bracketHighlight.ranges[0], 1, 20, 1, 21);
-            assert.range(editor.session.$bracketHighlight.ranges[1], 4, 4, 4, 5);
+        await lang.sleep(60);
+        assert.ok(editor.session.$bracketHighlight);
+        assert.range(editor.session.$bracketHighlight.ranges[0], 1, 20, 1, 21);
+        assert.range(editor.session.$bracketHighlight.ranges[1], 4, 4, 4, 5);
 
-            editor.session.selection.$setSelection(1, 16, 1, 16);
-            setTimeout(function () {
-                assert.ok(editor.session.$bracketHighlight == null);
-                editor.setKeyboardHandler(vim.handler);
-                editor.session.selection.$setSelection(1, 20, 1, 20);
-                setTimeout(function () {
-                    assert.ok(editor.session.$bracketHighlight);
-                    assert.range(editor.session.$bracketHighlight.ranges[0], 1, 20, 1, 21);
-                    assert.range(editor.session.$bracketHighlight.ranges[1], 4, 4, 4, 5);
-                    done();
-                }, 60);
-            }, 60);
-        }, 60);
+        editor.session.selection.$setSelection(1, 16, 1, 16);
+
+        await lang.sleep(60);
+        assert.ok(editor.session.$bracketHighlight == null);
+        editor.setKeyboardHandler(vim.handler);
+        editor.session.selection.$setSelection(1, 20, 1, 20);
+
+        await lang.sleep(60);
+        assert.ok(editor.session.$bracketHighlight);
+        assert.range(editor.session.$bracketHighlight.ranges[0], 1, 20, 1, 21);
+        assert.range(editor.session.$bracketHighlight.ranges[1], 4, 4, 4, 5);
+        done();
     },
     "test: scroll cursor into view": function() {
+        editor.renderer.$loop._flush();
+        
         function X(n) {
             return "X".repeat(n);
         }
@@ -476,12 +557,37 @@ module.exports = {
             assert.equal(cell.element.className, "ace_gutter-cell ace_gutter-active-line hello");
             done();
         });
+    },
+    "test: screenToTextCoordinates with line widget offset, issue #5874": function() {
+        var renderer = editor.renderer;
+        editor.setValue("line0\nline1\nline2\nline3\nline4");
+        renderer.setPadding(0);
+        renderer.characterWidth = 10;
+        renderer.lineHeight = renderer.layerConfig.lineHeight = 13;
+
+        var widgetEl = document.createElement("div");
+        widgetEl.style.height = "40px";
+        editor.session.widgetManager.addLineWidget({
+            el: widgetEl,
+            row: 1,
+            pixelHeight: 40
+        });
+        renderer.$loop._flush();
+
+        var r = renderer.scroller.getBoundingClientRect();
+
+        // Line 2 starts at: line0(13) + line1(13) + widget(40) = 66px
+        // Clicking in top half of line 2 (y=69) should return row 2
+        var pos = renderer.screenToTextCoordinates(r.left + 5, r.top + 69);
+        assert.equal(pos.row, 2);
+
+        // Clicking bottom half of line 2 (y=75) should also return row 2
+        pos = renderer.screenToTextCoordinates(r.left + 5, r.top + 75);
+        assert.equal(pos.row, 2);
     }
 
     // change tab size after setDocument (for text layer)
 };
 
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("./test/run")(module);

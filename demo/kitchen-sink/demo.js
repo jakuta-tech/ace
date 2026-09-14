@@ -33,6 +33,7 @@ var Range = require("ace/range").Range;
 
 var whitespace = require("ace/ext/whitespace");
 
+var createDiffView = require("ace/ext/diff").createDiffView;
 
 
 var doclist = require("./doclist");
@@ -42,6 +43,8 @@ var saveOption = util.saveOption;
 
 require("ace/ext/elastic_tabstops_lite");
 require("ace/incremental_search");
+
+require("ace/ext/whitespaces_in_selection");
 
 var TokenTooltip = require("./token_tooltip").TokenTooltip;
 require("ace/config").defineOptions(Editor.prototype, "editor", {
@@ -65,21 +68,63 @@ require("ace/config").defineOptions(Editor.prototype, "editor", {
 require("ace/config").defineOptions(Editor.prototype, "editor", {
     useAceLinters: {
         set: function(val) {
-            if (val && !window.languageProvider) {
-                loadLanguageProvider(editor);
+            var enabled = !!val;
+            if (enabled && !window.languageProvider) {
+                loadLanguageProvider(this);
             }
-            else if (val) {
+            else if (enabled) {
                 window.languageProvider.registerEditor(this);
             } else {
-                // todo unregister
+                if (window.languageProvider) {
+                    window.languageProvider.unregisterEditor(this, true);
+                    window.languageProvider = null;
+                }
+                if (this.getOption("useAceSpellCheck")) {
+                    this.setOption("useAceSpellCheck", false);
+                    saveOption("useAceSpellCheck", false);
+                    if (env.optionsPanel) {
+                        env.optionsPanel.editor = this;
+                        env.optionsPanel.render();
+                    }
+                }
             }
         }
+    }
+});
+
+require("ace/config").defineOptions(Editor.prototype, "editor", {
+    useAceSpellCheck: {
+        set: function(val) {
+            var nextValue = !!val;
+            if (window.useAceSpellCheck === nextValue) return;
+            window.useAceSpellCheck = nextValue;
+            if (nextValue && !this.getOption("useAceLinters")) {
+                this.setOption("useAceLinters", true);
+                saveOption("useAceLinters", true);
+                if (env.optionsPanel) {
+                    env.optionsPanel.editor = this;
+                    env.optionsPanel.render();
+                }
+                return;
+            }
+            if (window.languageProvider && this.getOption("useAceLinters")) {
+                window.languageProvider.unregisterEditor(this, true);
+                window.languageProvider = null;
+                loadLanguageProvider(this);
+            }
+        },
+        get: function() {
+            return window.useAceSpellCheck !== false;
+        },
+        handlesSet: true
     }
 });
 
 var {HoverTooltip} = require("ace/tooltip");
 var MarkerGroup = require("ace/marker_group").MarkerGroup;
 var docTooltip = new HoverTooltip();
+window.useAceSpellCheck = true;
+
 function loadLanguageProvider(editor) {
     function loadScript(cb) {
         if (define.amd) {
@@ -97,7 +142,22 @@ function loadLanguageProvider(editor) {
         }
     }
     loadScript(function(LanguageProvider) {
-        var languageProvider = LanguageProvider.fromCdn("https://mkslanc.github.io/ace-linters/build", {
+        var services = [];
+        if (window.useAceSpellCheck !== false) {
+            services.push({
+                name: "ace-spell-check",
+                className: "AceSpellCheck",
+                modes: "*",
+                script: "ace-spell-check.js",
+                cdnUrl: "https://unpkg.com/ace-spell-check@latest/build"
+            });
+        }
+
+        var languageProvider = LanguageProvider.fromCdn({
+            services: services,
+            serviceManagerCdn:"https://mkslanc.github.io/ace-linters/build",
+            includeDefaultLinters: true
+        }, {
             functionality: {
                 hover: true,
                 completion: {
@@ -323,6 +383,7 @@ window.onresize = onResize;
 onResize();
 
 /*********** options panel ***************************/
+var diffView;
 doclist.history = doclist.docs.map(function(doc) {
     return doc.name;
 });
@@ -346,24 +407,36 @@ doclist.addToHistory = function(name) {
         h.index = h.push(name);
     }
 };
+
+var initDoc = (session) => {
+    if (!session)
+        return;
+    doclist.addToHistory(session.name);
+    session = env.split.setSession(session);
+    whitespace.detectIndentation(session);
+    optionsPanel.render();
+    env.editor.focus();
+    if (diffView) {
+        diffView.detach()
+        diffView = createDiffView({
+            inline: "b",
+            editorB: editor,
+            valueA: editor.getValue()
+        });
+    }
+}
+
 doclist.pickDocument = function(name) {
-    doclist.loadDoc(name, function(session) {
-        if (!session)
-            return;
-        doclist.addToHistory(session.name);
-        session = env.split.setSession(session);
-        whitespace.detectIndentation(session);
-        optionsPanel.render();
-        env.editor.focus();
-    });
+    doclist.loadDoc(name, initDoc);
 };
 
 
 
 var OptionPanel = require("ace/ext/options").OptionPanel;
-var optionsPanel = new OptionPanel(env.editor);
+var optionsPanel = env.optionsPanel = new OptionPanel(env.editor);
 
 var originalAutocompleteCommand = null;
+
 
 optionsPanel.add({
     Main: {
@@ -405,6 +478,31 @@ optionsPanel.add({
                     : sp.getOrientation() == sp.BELOW
                     ? "Below"
                     : "Beside";
+            }
+        },
+        "Show diffs": {
+            position: -102,
+            type: "buttonBar",
+            path: "diffView",
+            values: ["None", "Inline"],
+            onchange: function (value) {
+                    if (value === "Inline" && !diffView) {
+                        diffView = createDiffView({
+                            inline: "b",
+                            editorB: editor,
+                            valueA: editor.getValue()
+                        });
+                    }
+                    else if (value === "None") {
+                        if (diffView) {
+                            diffView.detach();
+                            diffView = null;
+                        }
+                    }
+            },
+            getValue: function() {
+                return !diffView ? "None"
+                    : "Inline";
             }
         }
     },
@@ -449,6 +547,14 @@ optionsPanel.add({
             position: 3000,
             path: "useAceLinters"
         },
+        "Use Spell Checker": {
+            position: 3001,
+            path: "useAceSpellCheck"
+        },
+        "Show whitespaces in selection": {
+            position: 3100,
+            path: "showWhitespacesInSelection"
+        },
         "Show Textarea Position": devUtil.textPositionDebugger,
         "Text Input Debugger": devUtil.textInputDebugger,
     }
@@ -457,7 +563,6 @@ optionsPanel.add({
 var optionsPanelContainer = document.getElementById("optionsPanel");
 optionsPanel.render();
 optionsPanelContainer.insertBefore(optionsPanel.container, optionsPanelContainer.firstChild);
-optionsPanel.container.style.width = "80%";
 optionsPanel.on("setOption", function(e) {
     util.saveOption(e.name, e.value);
 });
@@ -467,8 +572,33 @@ function updateUIEditorOptions() {
     optionsPanel.render();
 }
 
-optionsPanel.setOption("doc", util.getOption("doc") || "JavaScript");
+env.editor.on("changeSession", function() {
+    for (var i in env.editor.session.$options) {
+        if (i == "mode") continue;
+        var value = util.getOption(i);
+        if (value != undefined) {
+            env.editor.setOption(i, value);
+        }
+    }
+});
+
+if (localStorage.last_session) {
+    try {
+        var sessionObj = JSON.parse(localStorage.last_session);
+        var session = EditSession.fromJSON(localStorage.last_session);
+        session.name = sessionObj.name;
+        var cachedDoc = doclist.fileCache[session.name.toLowerCase()];
+        if (cachedDoc) {
+            cachedDoc.session = session;
+        }
+        initDoc(session);
+    } catch (e) {
+        console.error(e);
+        optionsPanel.setOption("doc", util.getOption("doc") || "JavaScript");
+    }
+}
 for (var i in optionsPanel.options) {
+    if (i === "doc") continue;
     var value = util.getOption(i);
     if (value != undefined) {
         if ((i == "mode" || i == "theme") && !/[/]/.test(value))
@@ -476,6 +606,7 @@ for (var i in optionsPanel.options) {
         optionsPanel.setOption(i, value);
     }
 }
+optionsPanel.render();
 
 
 function synchroniseScrolling() {
@@ -489,13 +620,6 @@ function synchroniseScrolling() {
 
 var StatusBar = require("ace/ext/statusbar").StatusBar;
 new StatusBar(env.editor, cmdLine.container);
-
-
-var Emmet = require("ace/ext/emmet");
-net.loadScript("https://cloud9ide.github.io/emmet-core/emmet.js", function() {
-    Emmet.setCore(window.emmet);
-    env.editor.setOption("enableEmmet", true);
-});
 
 require("ace/placeholder").PlaceHolder;
 
@@ -549,9 +673,67 @@ optionsPanelContainer.insertBefore(
             "Open Dialog ",
             ["button",  {onclick: openTestDialog.bind(null, false)}, "Scale"],
             ["button",  {onclick: openTestDialog.bind(null, true)}, "Height"]
+        ],
+        ["div", {},
+            ["button",  {onclick: function() {
+                editor.setOption("fontFamily", "cursive");
+                session.setValue( session.getValue() + "שלום עולם בעברית123" +"\n" + "ジャパン + 八洲\n" + "𒐫𒈙⸻ဪ", 1);
+            }}, "cursive"],
+            ["button",  {onclick: function() {
+                editor.setOption("fontFamily", "Tahoma");
+                session.setValue( session.getValue() + "שלום עולם בעברית123" +"\n" + "ジャパン + 八洲", 1);
+            }}, "Tahoma"],
+            ["button",  {onclick: function() {
+                var transforms = [
+                    '', 
+                    "scale(0.5)", 
+                    "translate(100%, 100%) rotate(180deg)", 
+                    "rotate(18deg)",
+                    "rotate(-18deg)",
+                    "scale(0.5, 0.9)", 
+                    'matrix3d(\
+                        1.8, 0.3, 0, 0.001,\
+                        -0.2, 2.1, 0, 0.003,\
+                        0, 0, 1, 0,\
+                        10, 20, 0, 1\
+                    )',
+                ];
+                var transform = editor.container.parentElement.style.transform;
+                var i = transforms.indexOf(transform);
+                transform = transforms[(i + 1) % transforms.length];
+                editor.container.parentElement.style.transform = transform;
+                editor.container.parentElement.style.transformOrigin = "0 0 0";
+                editor.setOption("hasCssTransforms", true);
+            }}, "Transform"],
         ]
     ]),
     optionsPanelContainer.children[1]
+);
+
+
+var resetSession = () => {
+    if (localStorage) {
+        localStorage.last_session = undefined;
+    }
+    try {
+        var session = env.editor.session;
+        if (session.name)
+            var cachedDoc = doclist.fileCache[session.name.toLowerCase()];
+        if (cachedDoc) {
+            cachedDoc.session = undefined;
+        }
+        optionsPanel.setOption("doc", util.getOption("doc") || "JavaScript");
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+optionsPanelContainer.insertBefore(
+    dom.buildDom(["div", {style: "text-align:center;width: 100%"},
+        ["div", {},
+            ["button", {onclick: resetSession}, "Reset session"]],
+    ]),
+    optionsPanelContainer.children[0]
 );
 
 function openTestDialog(animateHeight) {
@@ -559,9 +741,14 @@ function openTestDialog(animateHeight) {
         window.dialogEditor.destroy();
     var editor = ace.edit(null, {
         value: "test editor", 
-        mode: "ace/mode/javascript"
+        mode: "ace/mode/javascript",
+        enableBasicAutocompletion: true
     });
     window.dialogEditor = editor;
+
+    editor.completer.parentNode = editor.container;
+    if (window.languageProvider)
+        window.languageProvider.registerEditor(editor);
 
     var dialog = dom.buildDom(["div", {
         style: "transition: all 1s; position: fixed; z-index: 100000;"
@@ -675,3 +862,11 @@ function moveFocus() {
     else
         env.editor.focus();
 }
+
+window.onbeforeunload = function () {
+    if (env.editor && localStorage) {
+        var sessionObj = env.editor.session.toJSON();
+        sessionObj.name = util.getOption("doc") || "JavaScript";
+        localStorage.last_session = JSON.stringify(sessionObj);
+    }
+};

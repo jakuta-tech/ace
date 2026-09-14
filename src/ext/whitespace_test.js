@@ -1,7 +1,3 @@
-if (typeof process !== "undefined") {
-    require("amd-loader");
-}
-
 "use strict";
 
 require("../test/mockdom");
@@ -15,7 +11,7 @@ var whitespace = require("./whitespace");
 module.exports = {
     timeout: 10000,
 
-    "test tab detection": function(next) {
+    "test tab detection": function() {
         var s = new EditSession([
             "define({",
             "\tfoo:1,",
@@ -44,11 +40,9 @@ module.exports = {
         s.setValue("");
         indent = whitespace.$detectIndentation(s.doc.$lines);
         assert.ok(!indent);
-        
-        next();
     },
 
-    "test empty session": function(next) {
+    "test empty session": function() {
         var s = new EditSession([
             "define({",
             "foo:1,",
@@ -61,11 +55,9 @@ module.exports = {
         indent = whitespace.$detectIndentation(s.doc.$lines);
         assert.equal(indent.ch, " ");
         assert.equal(indent.length, 4);
-        
-        next();
     },
     
-    "!test one line": function(next) {
+    "!test one line": function() {
         var s = new EditSession([
             "define({",
             "    foo:1,",
@@ -74,11 +66,9 @@ module.exports = {
         var indent = whitespace.$detectIndentation(s.doc.$lines);
         assert.equal(indent.ch, " ");
         assert.equal(indent.length, 4);
-        
-        next();
     },
     
-    "test 1 width indents": function(next) {
+    "test 1 width indents": function() {
         var s = new EditSession([
             "define({",
             "    foo:1,",
@@ -110,11 +100,9 @@ module.exports = {
         indent = whitespace.$detectIndentation(s.doc.$lines);
         assert.equal(indent.ch, " ");
         assert.equal(indent.length, 1);
-        
-        next();
     },
 
-    "test trimTrailingSpace": function(next) {
+    "test trimTrailingSpace": function() {
         var session = new EditSession([
             "a",
             "\t b \t",
@@ -191,8 +179,6 @@ module.exports = {
             keepCursorPosition: true,
             trimEmpty: true
         });
-        
-        next();
     },
 
     "test convertIndentation": function() {
@@ -213,6 +199,4 @@ module.exports = {
 };
 
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("../test/run")(module);

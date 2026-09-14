@@ -1,7 +1,3 @@
-if (typeof process !== "undefined") {
-    require("amd-loader");
-}
-
 "use strict";
 
 var Range = require("./range").Range;
@@ -146,7 +142,7 @@ module.exports = {
         assert.range(range.toScreenRange(session), 1, 1, 1, 4);
         
         var range = new Range(2, 1, 2, 2);
-        assert.range(range.toScreenRange(session), 2, 2, 2, 4);
+        assert.range(range.toScreenRange(session), 2, 1, 2, 2);
 
         var range = new Range(3, 0, 3, 4);
         assert.range(range.toScreenRange(session), 3, 0, 3, 10);
@@ -154,6 +150,4 @@ module.exports = {
 };
 
 
-if (typeof module !== "undefined" && module === require.main) {
-    require("asyncjs").test.testcase(module.exports).exec();
-}
+require("./test/run")(module);
